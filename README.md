@@ -19,6 +19,11 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Round winner screen with points, standings, Play Again, Leave, and a 10-second auto-rematch
 - SQLite room snapshots, match records, and player statistics
 - Player avatars, sound toggle, dark/light themes, responsive mobile UI
+- Distinct card, UNO, Catch UNO, and winner sounds with adjustable effects volume
+- Optional procedural background music with its own toggle and volume control
+- Server-controlled computer opponents for solo games or mixed human/computer tables
+- Viewport-stable gameplay that preserves page and hand position after every live update
+- Locally bundled Socket.IO browser client with no runtime CDN dependency
 - Server-side input validation, message limits, duplicate-name prevention, and private hand projection
 
 ## Project Structure
@@ -26,6 +31,7 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 ```text
 flask-uno-live/
 |-- app.py                  # Flask routes and Socket.IO events
+|-- bot_player.py           # Fair computer decisions using the same game engine
 |-- game_engine.py          # Deck, rules, turns, penalties, public state
 |-- rooms.py                # Thread-safe rooms, identities, reconnects, chat
 |-- models.py               # SQLite snapshots, matches, player statistics
@@ -41,6 +47,7 @@ flask-uno-live/
 |-- static/
 |   |-- style.css
 |   |-- script.js
+|   |-- vendor/socket.io.min.js # Bundled Socket.IO 4 browser client
 |   `-- sounds/
 |       `-- README.md       # Web Audio implementation note
 |-- database/
@@ -130,7 +137,7 @@ To test from phones or computers on the same Wi-Fi network, use the host compute
 ## How To Play
 
 1. Enter a display name, choose an avatar, and create or join a room.
-2. The host starts after at least two connected players are ready.
+2. The host can invite people, add computer opponents, or combine both. At least two total seats are required.
 3. On your turn, play a highlighted legal card or click the draw pile.
 4. After drawing a playable card, play that card or choose **Keep card and pass**.
 5. A Wild asks you to choose the next color.
@@ -138,6 +145,16 @@ To test from phones or computers on the same Wi-Fi network, use the host compute
 7. In Classic mode, the next player can accept a Wild Draw Four or challenge it. An illegal +4 gives the offender four cards; a failed challenge gives the challenger six.
 8. In Wild mode, draw cards can be stacked using the combinations shown in the lobby. Drawing takes the complete accumulated penalty and ends the turn.
 9. The first player to empty their hand wins the round and receives the point value of every opponent card. Everyone is queued into the next round after 10 seconds unless they leave.
+
+Use the floating **Audio** control at any time to enable or disable effects, start background music, and adjust the two volume levels independently. Browsers require a user click before music can begin.
+
+## Computer Opponents
+
+- The room host can add or remove computers in the lobby, up to the six-player table limit.
+- One human plus one computer is enough to start a solo game.
+- Computer decisions run on the server and use the same validated play, draw, penalty, challenge, UNO, scoring, and rematch functions as human actions.
+- Computers choose from their own hand only. They do not inspect opponents' private cards or the hidden legality result when deciding whether to challenge a Wild Draw Four.
+- In Classic mode, computers do not intentionally bluff an illegal Wild Draw Four.
 
 ## Game Modes
 
@@ -170,7 +187,7 @@ The host selects a mode in the lobby before the first deal.
 pytest -q
 ```
 
-The tests cover the 108-card deck, Classic penalties, Wild stacking combinations, Wild Draw Four accept/challenge results, UNO and Catch UNO timing, scoring, private hands, reconnects, final-card persistence, and a two-browser rematch flow.
+The tests cover the 108-card deck, Classic penalties, Wild stacking combinations, Wild Draw Four accept/challenge results, UNO and Catch UNO timing, scoring, private hands, reconnects, final-card persistence, two-browser rematches, computer decisions, scheduled computer turns, and the bundled Socket.IO client.
 
 ## Push To GitHub
 
@@ -247,6 +264,7 @@ For durable SQLite data, create a Railway volume, mount it at `/data`, and add `
 | --- | --- |
 | `createRoom` / `joinRoom` / `rejoinRoom` | Seat and room lifecycle |
 | `setGameMode` / `startGame` | Host mode selection and first-round lifecycle |
+| `addBot` / `removeBot` | Host-managed computer seats in the lobby |
 | `playCard` / `drawCard` / `passTurn` | Turn actions validated by the server |
 | `declareUno` | One-card declaration |
 | `catchUno` | Catch a missed declaration during the active UNO window |
@@ -255,4 +273,4 @@ For durable SQLite data, create a Railway volume, mount it at `/data`, and add `
 | `chatMessage` | Sanitized room chat |
 | `leaveRoom` | Explicit room exit |
 
-The server emits `lobbyState`, private `gameState`, `chatMessage`, `notification`, and `errorMessage` updates.
+The server emits `lobbyState`, private `gameState`, `chatMessage`, `notification`, `soundEffect`, and `errorMessage` updates.

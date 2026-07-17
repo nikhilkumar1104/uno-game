@@ -5,11 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0e12">
   <title>UNO Live</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='3') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='4') }}">
 </head>
 <body data-initial-room="{{ initial_room_code }}">
   <div id="connectionBanner" class="connection-banner hidden" role="status">Reconnecting...</div>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <div id="actionPopup" class="action-popup hidden" role="status" aria-live="assertive">
+    <strong id="actionPopupTitle">UNO!</strong>
+    <span id="actionPopupMessage">A player called UNO.</span>
+  </div>
+  <div class="audio-dock">
+    <button id="audioSettingsBtn" class="audio-dock-button" type="button" aria-expanded="false" aria-controls="audioSettingsPanel">Audio</button>
+    <div id="audioSettingsPanel" class="audio-settings hidden">
+      <div class="audio-settings-heading">
+        <strong>Table audio</strong>
+        <button id="closeAudioSettingsBtn" class="audio-close" type="button" aria-label="Close audio settings">×</button>
+      </div>
+      <button id="soundToggle" class="quiet-button" type="button">Effects on</button>
+      <label class="volume-control" for="effectsVolume">
+        <span>Effects volume <output id="effectsVolumeValue">60%</output></span>
+        <input id="effectsVolume" type="range" min="0" max="100" step="5" value="60">
+      </label>
+      <button id="musicToggle" class="quiet-button" type="button">Music off</button>
+      <label class="volume-control" for="musicVolume">
+        <span>Music volume <output id="musicVolumeValue">20%</output></span>
+        <input id="musicVolume" type="range" min="0" max="100" step="5" value="20">
+      </label>
+    </div>
+  </div>
 
   <main class="app-shell">
     <section id="welcomeView" class="screen welcome-view">
@@ -18,7 +41,6 @@
           <span class="brand-uno">UNO</span><span>LIVE</span>
         </a>
         <div class="nav-actions">
-          <button id="soundToggle" class="quiet-button" type="button">Sound on</button>
           <button id="themeToggle" class="quiet-button" type="button">Light mode</button>
         </div>
       </header>
@@ -84,7 +106,7 @@
     </div>
   </div>
 
-  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
-  <script src="{{ url_for('static', filename='script.js', v='3') }}" defer></script>
+  <script src="{{ url_for('static', filename='vendor/socket.io.min.js', v='4.8.3') }}"></script>
+  <script src="{{ url_for('static', filename='script.js', v='4') }}" defer></script>
 </body>
 </html>

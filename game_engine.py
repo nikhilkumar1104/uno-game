@@ -276,7 +276,9 @@ def _finish_round(room: dict[str, Any], player: dict[str, Any]) -> None:
     room["pending_draw_type"] = None
     room["wild4_challenge"] = None
     room["rematch_choices"] = {
-        seat["id"]: "pending" for seat in active_players(room) if seat["connected"]
+        seat["id"]: "ready" if seat.get("is_bot") else "pending"
+        for seat in active_players(room)
+        if seat["connected"]
     }
     room["rematch_deadline"] = time.time() + 10
     room.setdefault("match_history", []).append(
@@ -628,6 +630,7 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
                 "spectator": player["spectator"],
                 "cardCount": len(player["hand"]),
                 "saidUno": player["said_uno"],
+                "isBot": bool(player.get("is_bot")),
             }
             for player in room["players"]
         ],
@@ -664,6 +667,7 @@ def lobby_state(room: dict[str, Any]) -> dict[str, Any]:
                 "spectator": player["spectator"],
                 "cardCount": len(player["hand"]),
                 "saidUno": player["said_uno"],
+                "isBot": bool(player.get("is_bot")),
             }
             for player in room["players"]
         ],

@@ -20,10 +20,14 @@ const state = {
   previousTurnId: null,
   messageIds: new Set(),
   soundEnabled: localStorage.getItem("uno.sound") !== "off",
+  effectsVolume: Math.min(1, Math.max(0, Number(localStorage.getItem("uno.effectsVolume") || 0.6))),
+  musicEnabled: localStorage.getItem("uno.music") === "on",
+  musicVolume: Math.min(1, Math.max(0, Number(localStorage.getItem("uno.musicVolume") || 0.2))),
   busy: false,
   actionPending: false,
   countdownTimer: null,
   previousWinnerId: null,
+  lastNotificationMessage: "",
 };
 
 const invitedRoomCode = document.body.dataset.initialRoom || "";
@@ -50,9 +54,10 @@ const COLOR_HEX = {
 };
 
 function showView(name) {
+  const isAlreadyVisible = !views[name].classList.contains("hidden");
   Object.values(views).forEach((view) => view.classList.add("hidden"));
   views[name].classList.remove("hidden");
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (!isAlreadyVisible) window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function persistSession() {
@@ -91,35 +96,108 @@ function setBusy(busy) {
 }
 
 let toastTimer;
-function toast(message, error = false) {
+function toast(message, error = false, withSound = true) {
   const element = byId("toast");
   element.textContent = message;
   element.classList.toggle("error", error);
   element.classList.remove("hidden");
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => element.classList.add("hidden"), 3000);
-  playSound(error ? "error" : "notice");
+  if (withSound) playSound(error ? "error" : "notice");
+}
+
+let actionPopupTimer;
+function showActionPopup(type, message) {
+  const popup = byId("actionPopup");
+  const titles = { uno: "UNO!", catch: "CAUGHT!", win: "ROUND WON!" };
+  byId("actionPopupTitle").textContent = titles[type] || "UNO!";
+  byId("actionPopupMessage").textContent = message || "Table action announced.";
+  popup.className = `action-popup ${type}`;
+  window.clearTimeout(actionPopupTimer);
+  actionPopupTimer = window.setTimeout(() => popup.classList.add("hidden"), type === "win" ? 3200 : 2200);
+}
+
+let sharedAudioContext = null;
+let musicTimer = null;
+let musicStep = 0;
+
+function audioContext() {
+  if (!sharedAudioContext) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    sharedAudioContext = new AudioContext();
+  }
+  if (sharedAudioContext.state === "suspended") sharedAudioContext.resume().catch(() => {});
+  return sharedAudioContext;
+}
+
+function tone(context, frequency, start, duration, volume, wave = "sine") {
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = wave;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), start + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.02);
 }
 
 function playSound(type) {
-  if (!state.soundEnabled) return;
+  if (!state.soundEnabled || state.effectsVolume <= 0) return;
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const context = new AudioContext();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.value = { turn: 620, play: 440, win: 760, error: 170, notice: 350 }[type] || 350;
-    gain.gain.setValueAtTime(0.04, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.12);
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.12);
-    oscillator.addEventListener("ended", () => context.close());
+    const context = audioContext();
+    if (!context) return;
+    const patterns = {
+      play: [[360, 0, 0.07, "triangle"], [520, 0.045, 0.09, "triangle"]],
+      uno: [[523, 0, 0.1, "square"], [659, 0.09, 0.1, "square"], [784, 0.18, 0.16, "square"]],
+      catch: [[320, 0, 0.09, "sawtooth"], [210, 0.08, 0.16, "sawtooth"]],
+      win: [[523, 0, 0.14, "triangle"], [659, 0.12, 0.14, "triangle"], [784, 0.24, 0.14, "triangle"], [1047, 0.37, 0.28, "triangle"]],
+      turn: [[620, 0, 0.13, "sine"]],
+      error: [[170, 0, 0.18, "sawtooth"]],
+      notice: [[350, 0, 0.11, "sine"]],
+    };
+    const now = context.currentTime;
+    (patterns[type] || patterns.notice).forEach(([frequency, offset, duration, wave]) => {
+      tone(context, frequency, now + offset, duration, 0.065 * state.effectsVolume, wave);
+    });
   } catch (_) {
     // Audio is optional and may be blocked before the first user gesture.
   }
+}
+
+function scheduleMusicNote() {
+  if (!state.musicEnabled || state.musicVolume <= 0) return;
+  const context = audioContext();
+  if (!context) return;
+  const melody = [130.81, 164.81, 196, 164.81, 146.83, 174.61, 220, 174.61];
+  const frequency = melody[musicStep % melody.length];
+  const now = context.currentTime;
+  tone(context, frequency, now, 1.35, 0.035 * state.musicVolume, "sine");
+  tone(context, frequency * 2, now + 0.08, 0.8, 0.012 * state.musicVolume, "triangle");
+  musicStep += 1;
+}
+
+function startMusic() {
+  if (!state.musicEnabled || musicTimer) return;
+  scheduleMusicNote();
+  musicTimer = window.setInterval(scheduleMusicNote, 850);
+}
+
+function stopMusic() {
+  window.clearInterval(musicTimer);
+  musicTimer = null;
+}
+
+function updateAudioControls() {
+  byId("soundToggle").textContent = state.soundEnabled ? "Effects on" : "Effects off";
+  byId("musicToggle").textContent = state.musicEnabled ? "Music on" : "Music off";
+  byId("effectsVolume").value = String(Math.round(state.effectsVolume * 100));
+  byId("musicVolume").value = String(Math.round(state.musicVolume * 100));
+  byId("effectsVolumeValue").textContent = `${Math.round(state.effectsVolume * 100)}%`;
+  byId("musicVolumeValue").textContent = `${Math.round(state.musicVolume * 100)}%`;
 }
 
 function initials(username) {
@@ -157,13 +235,29 @@ function renderLobbyPlayer(player) {
   name.className = "player-name";
   name.textContent = player.username;
   if (player.isHost) name.appendChild(makeBadge("host-badge", "Host"));
+  if (player.isBot) name.appendChild(makeBadge("bot-badge", "CPU"));
   details.appendChild(name);
 
   const note = document.createElement("span");
   note.className = "player-note";
-  note.textContent = player.spectator ? "Spectator" : player.connected ? "Ready" : "Reconnecting";
+  note.textContent = player.isBot
+    ? "Computer opponent"
+    : player.spectator
+      ? "Spectator"
+      : player.connected
+        ? "Ready"
+        : "Reconnecting";
   details.appendChild(note);
   card.appendChild(details);
+  if (player.isBot && state.isHost) {
+    const remove = document.createElement("button");
+    remove.className = "remove-bot-button";
+    remove.type = "button";
+    remove.dataset.botId = player.id;
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${player.username}`);
+    card.appendChild(remove);
+  }
   return card;
 }
 
@@ -192,12 +286,13 @@ function renderLobby(room) {
 
   const list = byId("lobbyPlayers");
   list.replaceChildren(...room.players.map(renderLobbyPlayer));
+  byId("addBotBtn").disabled = !state.isHost || active.length >= 6;
 
   const start = byId("startGameBtn");
   start.disabled = !state.isHost || connected.length < 2;
   byId("lobbyMessage").textContent = state.isHost
     ? connected.length >= 2
-      ? "Everyone is connected. Start when the table is ready."
+      ? "The table is ready. Start with friends, computers, or both."
       : "At least one more connected player is needed."
     : "Waiting for the host to deal the first hand.";
   renderChat(room.chat || []);
@@ -213,13 +308,20 @@ function makeGamePlayer(player, currentPlayerId) {
   name.className = "player-name";
   name.textContent = player.username;
   if (player.isHost) name.appendChild(makeBadge("host-badge", "Host"));
+  if (player.isBot) name.appendChild(makeBadge("bot-badge", "CPU"));
   if (player.id === currentPlayerId) name.appendChild(makeBadge("turn-badge", "Turn"));
   if (player.saidUno) name.appendChild(makeBadge("uno-badge", "UNO"));
   details.appendChild(name);
 
   const note = document.createElement("span");
   note.className = "player-note";
-  note.textContent = player.spectator ? "Spectating" : player.connected ? "At table" : "Offline";
+  note.textContent = player.isBot
+    ? "Computer"
+    : player.spectator
+      ? "Spectating"
+      : player.connected
+        ? "At table"
+        : "Offline";
   details.appendChild(note);
   row.appendChild(details);
 
@@ -367,6 +469,9 @@ function startRematchCountdown(deadline) {
 }
 
 function renderGame(game) {
+  const preserveViewport = !views.game.classList.contains("hidden");
+  const viewportTop = window.scrollY;
+  const previousHandScroll = byId("playerHand").scrollLeft;
   state.actionPending = false;
   state.game = game;
   state.roomCode = game.code;
@@ -381,7 +486,7 @@ function renderGame(game) {
   const challenge = game.wild4Challenge;
 
   if (state.previousTurnId !== game.currentPlayerId && myTurn) {
-    toast("Your turn.");
+    toast("Your turn.", false, false);
     playSound("turn");
   }
   state.previousTurnId = game.currentPlayerId;
@@ -486,7 +591,10 @@ function renderGame(game) {
     byId("playAgainBtn").disabled = game.rematchChoice === "ready";
     byId("playAgainBtn").textContent = game.rematchChoice === "ready" ? "Queued" : "Play again";
     startRematchCountdown(game.rematchDeadline);
-    if (state.previousWinnerId !== winner.id) playSound("win");
+    if (state.previousWinnerId !== winner.id) {
+      playSound("win");
+      showActionPopup("win", `${winner.username} won ${winner.points} points.`);
+    }
     state.previousWinnerId = winner.id;
   } else {
     window.clearInterval(state.countdownTimer);
@@ -497,6 +605,12 @@ function renderGame(game) {
   renderMatchHistory(game.matchHistory || []);
   renderEvents(game.events || []);
   renderChat(game.chat || []);
+  if (preserveViewport) {
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: viewportTop, behavior: "auto" });
+      byId("playerHand").scrollLeft = previousHandScroll;
+    });
+  }
 }
 
 function showChallengeReveal(payload) {
@@ -655,7 +769,16 @@ function initializeSocket() {
   state.socket.on("lobbyState", renderLobby);
   state.socket.on("gameState", renderGame);
   state.socket.on("chatMessage", appendChat);
-  state.socket.on("notification", ({ message }) => toast(message));
+  state.socket.on("notification", ({ message }) => {
+    state.lastNotificationMessage = message;
+    toast(message, false, false);
+  });
+  state.socket.on("soundEffect", ({ type }) => {
+    playSound(type);
+    if (type === "uno" || type === "catch") {
+      showActionPopup(type, state.lastNotificationMessage);
+    }
+  });
   state.socket.on("challengeReveal", showChallengeReveal);
   state.socket.on("errorMessage", ({ message }) => {
     state.actionPending = false;
@@ -689,6 +812,11 @@ byId("joinForm").addEventListener("submit", (event) => {
 byId("copyCodeBtn").addEventListener("click", copyCode);
 byId("copyGameCodeBtn").addEventListener("click", copyCode);
 byId("startGameBtn").addEventListener("click", () => send("startGame", {}, true));
+byId("addBotBtn").addEventListener("click", () => send("addBot", {}, true));
+byId("lobbyPlayers").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-bot-id]");
+  if (button) send("removeBot", { botId: button.dataset.botId }, true);
+});
 byId("leaveLobbyBtn").addEventListener("click", leaveRoom);
 byId("leaveGameBtn").addEventListener("click", leaveRoom);
 byId("drawPile").addEventListener("click", () => send("drawCard", {}, true));
@@ -710,6 +838,7 @@ document.querySelectorAll(".mode-option").forEach((button) => {
 byId("playerHand").addEventListener("click", (event) => {
   const button = event.target.closest("button.uno-card.playable");
   if (!button || !state.game) return;
+  button.blur();
   const card = state.game.hand.find((item) => item.id === button.dataset.cardId);
   if (!card) return;
   if (card.color === "wild") {
@@ -718,7 +847,6 @@ byId("playerHand").addEventListener("click", (event) => {
     return;
   }
   send("playCard", { cardId: card.id }, true);
-  playSound("play");
 });
 
 byId("colorModal").addEventListener("click", (event) => {
@@ -727,7 +855,6 @@ byId("colorModal").addEventListener("click", (event) => {
   send("playCard", { cardId: state.selectedWildCardId, chosenColor: choice.dataset.color }, true);
   state.selectedWildCardId = null;
   byId("colorModal").classList.add("hidden");
-  playSound("play");
 });
 
 byId("cancelColorBtn").addEventListener("click", () => {
@@ -740,6 +867,8 @@ document.addEventListener("keydown", (event) => {
     state.selectedWildCardId = null;
     byId("colorModal").classList.add("hidden");
     byId("challengeRevealPanel").classList.add("hidden");
+    byId("audioSettingsPanel").classList.add("hidden");
+    byId("audioSettingsBtn").setAttribute("aria-expanded", "false");
   }
 });
 
@@ -755,13 +884,50 @@ document.querySelectorAll(".sidebar-tab").forEach((tab) => {
 wireChat("lobbyChatForm", "lobbyChatInput");
 wireChat("gameChatForm", "gameChatInput");
 
-byId("soundToggle").textContent = state.soundEnabled ? "Sound on" : "Sound off";
+byId("audioSettingsBtn").addEventListener("click", () => {
+  const panel = byId("audioSettingsPanel");
+  const opening = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden", !opening);
+  byId("audioSettingsBtn").setAttribute("aria-expanded", String(opening));
+});
+byId("closeAudioSettingsBtn").addEventListener("click", () => {
+  byId("audioSettingsPanel").classList.add("hidden");
+  byId("audioSettingsBtn").setAttribute("aria-expanded", "false");
+});
+
 byId("soundToggle").addEventListener("click", () => {
   state.soundEnabled = !state.soundEnabled;
   localStorage.setItem("uno.sound", state.soundEnabled ? "on" : "off");
-  byId("soundToggle").textContent = state.soundEnabled ? "Sound on" : "Sound off";
+  updateAudioControls();
   playSound("notice");
 });
+byId("effectsVolume").addEventListener("input", (event) => {
+  state.effectsVolume = Number(event.target.value) / 100;
+  localStorage.setItem("uno.effectsVolume", String(state.effectsVolume));
+  updateAudioControls();
+});
+byId("effectsVolume").addEventListener("change", () => playSound("notice"));
+byId("musicToggle").addEventListener("click", () => {
+  state.musicEnabled = !state.musicEnabled;
+  localStorage.setItem("uno.music", state.musicEnabled ? "on" : "off");
+  if (state.musicEnabled) startMusic();
+  else stopMusic();
+  updateAudioControls();
+});
+byId("musicVolume").addEventListener("input", (event) => {
+  state.musicVolume = Number(event.target.value) / 100;
+  localStorage.setItem("uno.musicVolume", String(state.musicVolume));
+  updateAudioControls();
+});
+
+document.addEventListener("pointerdown", () => {
+  if (state.musicEnabled) startMusic();
+}, { once: true });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopMusic();
+  else if (state.musicEnabled) startMusic();
+});
+updateAudioControls();
 
 const preferredTheme = localStorage.getItem("uno.theme")
   || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");

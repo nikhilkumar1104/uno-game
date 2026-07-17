@@ -15,6 +15,7 @@ from game_engine import GameRuleError, ensure_connected_turn
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
 USERNAME_PATTERN = re.compile(r"[^A-Za-z0-9 _-]")
 CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
+BOT_AVATARS = ("bolt", "wave", "leaf", "star", "nova")
 
 
 def clean_username(value: Any) -> str:
@@ -49,7 +50,7 @@ class RoomManager:
             for room in snapshots:
                 self._normalize_room(room)
                 for player in room.get("players", []):
-                    player["connected"] = False
+                    player["connected"] = bool(player.get("is_bot"))
                     player["socket_id"] = None
                 self.rooms[room["code"]] = room
 
@@ -71,6 +72,9 @@ class RoomManager:
         for row in room.get("leaderboard", {}).values():
             row.setdefault("points", 0)
             row.setdefault("wins", 0)
+        room["_bot_task_scheduled"] = False
+        for player in room.get("players", []):
+            player.setdefault("is_bot", False)
 
     def _new_code(self) -> str:
         while True:
@@ -96,7 +100,61 @@ class RoomManager:
             "left": False,
             "hand": [],
             "said_uno": False,
+            "is_bot": False,
         }
+
+    def add_bot(self, room: dict[str, Any], host_id: str) -> dict[str, Any]:
+        """Add one server-controlled seat to a lobby."""
+        with self.lock:
+            if room["host_id"] != host_id:
+                raise GameRuleError("Only the host can add computer players.")
+            if room["status"] != "lobby":
+                raise GameRuleError("Computer players can be added only in the lobby.")
+            if sum(not player["spectator"] for player in room["players"]) >= 6:
+                raise GameRuleError("The table already has 6 active players.")
+
+            used_names = {player["username"].casefold() for player in room["players"]}
+            number = next(
+                index
+                for index in range(1, 100)
+                if f"Computer {index}".casefold() not in used_names
+            )
+            bot = {
+                "id": f"bot_{secrets.token_urlsafe(18)}",
+                "username": f"Computer {number}",
+                "avatar": BOT_AVATARS[(number - 1) % len(BOT_AVATARS)],
+                "socket_id": None,
+                "connected": True,
+                "spectator": False,
+                "left": False,
+                "hand": [],
+                "said_uno": False,
+                "is_bot": True,
+            }
+            room["players"].append(bot)
+            room["updated_at"] = time.time()
+            return bot
+
+    def remove_bot(self, room: dict[str, Any], host_id: str, bot_id: Any) -> dict[str, Any]:
+        """Remove a specific computer seat before a game starts."""
+        with self.lock:
+            if room["host_id"] != host_id:
+                raise GameRuleError("Only the host can remove computer players.")
+            if room["status"] != "lobby":
+                raise GameRuleError("Computer players can be removed only in the lobby.")
+            bot = next(
+                (
+                    player
+                    for player in room["players"]
+                    if player["id"] == str(bot_id or "") and player.get("is_bot")
+                ),
+                None,
+            )
+            if not bot:
+                raise GameRuleError("That computer seat was not found.")
+            room["players"].remove(bot)
+            room["updated_at"] = time.time()
+            return bot
 
     def create_room(self, sid: str, username: Any, avatar: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         with self.lock:
@@ -174,7 +232,7 @@ class RoomManager:
                 raise GameRuleError("That room has expired.")
             token = str(player_id or "")
             player = next((seat for seat in room["players"] if seat["id"] == token), None)
-            if not player or player.get("left"):
+            if not player or player.get("left") or player.get("is_bot"):
                 raise GameRuleError("Your saved seat is no longer available.")
             old_sid = player.get("socket_id")
             if old_sid:
@@ -239,9 +297,7 @@ class RoomManager:
                 room["players"].remove(player)
 
             self._transfer_host_if_needed(room)
-            if not room["players"] or not any(
-                not seat["spectator"] and not seat.get("left") for seat in room["players"]
-            ):
+            if not any(not seat.get("is_bot") and not seat.get("left") for seat in room["players"]):
                 self.rooms.pop(code, None)
                 return None, code
             room["updated_at"] = time.time()
@@ -250,12 +306,19 @@ class RoomManager:
     @staticmethod
     def _transfer_host_if_needed(room: dict[str, Any]) -> None:
         host = next((seat for seat in room["players"] if seat["id"] == room["host_id"]), None)
-        if host and host["connected"] and not host.get("left"):
+        if host and host["connected"] and not host.get("left") and not host.get("is_bot"):
             return
         replacement = next(
-            (seat for seat in room["players"] if seat["connected"] and not seat["spectator"]),
+            (
+                seat
+                for seat in room["players"]
+                if seat["connected"] and not seat["spectator"] and not seat.get("is_bot")
+            ),
             None,
-        ) or next((seat for seat in room["players"] if seat["connected"]), None)
+        ) or next(
+            (seat for seat in room["players"] if seat["connected"] and not seat.get("is_bot")),
+            None,
+        )
         if replacement:
             room["host_id"] = replacement["id"]
 
@@ -280,7 +343,8 @@ class RoomManager:
             expired = [
                 code
                 for code, room in self.rooms.items()
-                if room["updated_at"] < cutoff and not any(p["connected"] for p in room["players"])
+                if room["updated_at"] < cutoff
+                and not any(p["connected"] and not p.get("is_bot") for p in room["players"])
             ]
             for code in expired:
                 self.rooms.pop(code, None)

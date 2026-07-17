@@ -10,11 +10,13 @@ from typing import Any, Callable
 from flask import Flask, current_app, jsonify, render_template, request
 from flask_socketio import SocketIO, emit, join_room as socket_join_room, leave_room as socket_leave_room
 
+from bot_player import perform_bot_turn
 from game_engine import (
     GameRuleError,
     accept_wild4,
     catch_uno,
     challenge_wild4,
+    current_player,
     declare_uno,
     draw_card,
     lobby_state,
@@ -150,6 +152,7 @@ def _send_state(room: dict[str, Any], sid: str | None = None) -> None:
 def _with_player_action(
     data: dict[str, Any] | None,
     action: Callable[[dict[str, Any], str, dict[str, Any]], str | None],
+    sound_effect: str | None = None,
 ) -> None:
     room: dict[str, Any] | None = None
     finished_transition = False
@@ -178,6 +181,8 @@ def _with_player_action(
             _send_state(room)
         if notification:
             socketio.emit("notification", {"message": notification}, to=room["code"])
+        if sound_effect:
+            socketio.emit("soundEffect", {"type": sound_effect}, to=room["code"])
         if finished_transition:
             socketio.emit(
                 "notification",
@@ -185,9 +190,88 @@ def _with_player_action(
                 to=room["code"],
             )
             _schedule_rematch(room)
+        elif room and room["status"] == "playing":
+            _schedule_bot_turn(room)
     except Exception as exc:  # Event boundaries must never leak stack traces to clients.
         current_app.logger.exception("Socket action failed") if not isinstance(exc, GameRuleError) else None
         _error(exc)
+
+
+def _bot_action_needed(room: dict[str, Any]) -> bool:
+    if room.get("status") != "playing":
+        return False
+    challenge = room.get("wild4_challenge")
+    if challenge:
+        target = next(
+            (player for player in room["players"] if player["id"] == challenge["target_id"]),
+            None,
+        )
+        return bool(target and target.get("is_bot") and target.get("connected"))
+    player = current_player(room)
+    return bool(player and player.get("is_bot") and player.get("connected"))
+
+
+def _schedule_bot_turn(room: dict[str, Any]) -> None:
+    """Schedule at most one delayed server-side computer decision."""
+    manager = _manager()
+    with manager.lock:
+        if not _bot_action_needed(room) or room.get("_bot_task_scheduled"):
+            return
+        room["_bot_task_scheduled"] = True
+        app_object = current_app._get_current_object()
+        socketio.start_background_task(
+            _bot_turn_worker,
+            app_object,
+            room["code"],
+            room.get("game_id"),
+        )
+
+
+def _bot_turn_worker(app_object: Flask, room_code: str, game_id: str | None) -> None:
+    socketio.sleep(0.8)
+    with app_object.app_context():
+        manager = _manager()
+        room: dict[str, Any] | None = None
+        result: dict[str, Any] | None = None
+        finished_transition = False
+        with manager.lock:
+            room = manager.rooms.get(room_code)
+            if not room:
+                return
+            room["_bot_task_scheduled"] = False
+            if room.get("game_id") != game_id or not _bot_action_needed(room):
+                return
+            was_playing = room["status"] == "playing"
+            try:
+                result = perform_bot_turn(room)
+            except GameRuleError:
+                current_app.logger.exception("Computer player action was rejected")
+                return
+            if not result:
+                return
+            finished_transition = was_playing and room["status"] == "finished"
+            if finished_transition:
+                try:
+                    record_match(room)
+                except Exception:
+                    db.session.rollback()
+                    current_app.logger.exception("Computer match persistence failed")
+            _persist(room)
+            _send_state(room)
+
+        if result.get("message"):
+            socketio.emit("notification", {"message": result["message"]}, to=room_code)
+        for effect in result.get("effects", []):
+            socketio.emit("soundEffect", {"type": effect}, to=room_code)
+        if finished_transition and room:
+            socketio.emit(
+                "notification",
+                {"message": f"{room['winner']['username']} won {room['winner']['points']} points!"},
+                to=room_code,
+            )
+            _schedule_rematch(room)
+        elif room and room["status"] == "playing":
+            _schedule_bot_turn(room)
 
 
 def _schedule_rematch(room: dict[str, Any]) -> None:
@@ -227,6 +311,8 @@ def _rematch_timeout(app_object: Flask, room_code: str, game_id: str) -> None:
             _persist(room)
             _send_state(room)
         socketio.emit("notification", {"message": message}, to=room_code)
+        if room["status"] == "playing":
+            _schedule_bot_turn(room)
 
 
 @socketio.on("createRoom")
@@ -279,6 +365,8 @@ def handle_join_room(data: dict[str, Any] | None) -> None:
             to=room["code"],
         )
         _send_state(room)
+        if room["status"] == "playing":
+            _schedule_bot_turn(room)
     except Exception as exc:
         _error(exc)
 
@@ -303,6 +391,8 @@ def handle_rejoin_room(data: dict[str, Any] | None) -> None:
             },
         )
         _send_state(room)
+        if room["status"] == "playing":
+            _schedule_bot_turn(room)
     except Exception as exc:
         emit("sessionExpired", {"message": str(exc)})
 
@@ -331,12 +421,30 @@ def handle_set_game_mode(data: dict[str, Any] | None) -> None:
     _with_player_action(data, action)
 
 
+@socketio.on("addBot")
+def handle_add_bot(data: dict[str, Any] | None) -> None:
+    def action(room: dict[str, Any], player_id: str, _: dict[str, Any]) -> str:
+        bot = _manager().add_bot(room, player_id)
+        return f"{bot['username']} joined as a computer opponent."
+
+    _with_player_action(data, action)
+
+
+@socketio.on("removeBot")
+def handle_remove_bot(data: dict[str, Any] | None) -> None:
+    def action(room: dict[str, Any], player_id: str, payload: dict[str, Any]) -> str:
+        bot = _manager().remove_bot(room, player_id, payload.get("botId"))
+        return f"{bot['username']} was removed."
+
+    _with_player_action(data, action)
+
+
 @socketio.on("playCard")
 def handle_play_card(data: dict[str, Any] | None) -> None:
     def action(room: dict[str, Any], player_id: str, payload: dict[str, Any]) -> None:
         play_card(room, player_id, str(payload.get("cardId") or ""), payload.get("chosenColor"))
 
-    _with_player_action(data, action)
+    _with_player_action(data, action, sound_effect="play")
 
 
 @socketio.on("drawCard")
@@ -355,7 +463,7 @@ def handle_declare_uno(data: dict[str, Any] | None) -> None:
         player = next(player for player in room["players"] if player["id"] == player_id)
         return f"{player['username']} called UNO!" if declare_uno(room, player_id) else None
 
-    _with_player_action(data, action)
+    _with_player_action(data, action, sound_effect="uno")
 
 
 @socketio.on("catchUno")
@@ -365,7 +473,7 @@ def handle_catch_uno(data: dict[str, Any] | None) -> None:
         offender_name = catch_uno(room, player_id)
         return f"{catcher['username']} caught {offender_name}. Two-card penalty!"
 
-    _with_player_action(data, action)
+    _with_player_action(data, action, sound_effect="catch")
 
 
 @socketio.on("acceptWild4")
@@ -449,6 +557,8 @@ def handle_leave_room(data: dict[str, Any] | None) -> None:
                 start_game(remaining)
             _persist(remaining)
             _send_state(remaining)
+            if remaining["status"] == "playing":
+                _schedule_bot_turn(remaining)
         elif removed_code:
             delete_room(removed_code)
         emit("leftRoom")
@@ -462,6 +572,8 @@ def handle_disconnect() -> None:
     if room:
         _persist(room)
         _send_state(room)
+        if room["status"] == "playing":
+            _schedule_bot_turn(room)
 
 
 app = create_app()

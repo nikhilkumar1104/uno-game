@@ -1,4 +1,4 @@
-from app import create_app, socketio
+from app import _schedule_bot_turn, create_app, socketio
 from game_engine import make_card
 from models import PlayerStat, db
 
@@ -6,6 +6,23 @@ from models import PlayerStat, db
 def received_payload(client, event_name):
     events = client.get_received()
     return next(item["args"][0] for item in events if item["name"] == event_name)
+
+
+def test_index_bundles_socket_client_instead_of_external_cdn(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'assets.sqlite3'}",
+            "SECRET_KEY": "asset-secret",
+        }
+    )
+    client = app.test_client()
+    html = client.get("/").get_data(as_text=True)
+    assert "/static/vendor/socket.io.min.js" in html
+    assert "cdn.socket.io" not in html
+    asset = client.get("/static/vendor/socket.io.min.js")
+    assert asset.status_code == 200
+    assert b"Socket.IO v4.8.3" in asset.data[:200]
 
 
 def test_full_socket_flow_winner_persistence_reconnect_and_rematch(tmp_path):
@@ -164,3 +181,50 @@ def test_wild_four_challenge_reveals_hand_only_to_challenger(tmp_path):
 
     host.disconnect()
     guest.disconnect()
+
+
+def test_solo_room_adds_and_runs_server_controlled_computer(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'bot.sqlite3'}",
+            "SECRET_KEY": "bot-secret",
+        }
+    )
+    host = socketio.test_client(app)
+    host.emit("createRoom", {"username": "Solo", "avatar": "ember"})
+    joined = received_payload(host, "roomJoined")
+    code = joined["roomCode"]
+    host.get_received()
+
+    host.emit("addBot", {"roomCode": code})
+    lobby = received_payload(host, "lobbyState")
+    bot_public = next(player for player in lobby["players"] if player["isBot"])
+    assert bot_public["username"] == "Computer 1"
+    host.get_received()
+
+    host.emit("startGame", {"roomCode": code})
+    host.get_received()
+    manager = app.extensions["room_manager"]
+    with app.app_context(), manager.lock:
+        room = manager.rooms[code]
+        bot = next(player for player in room["players"] if player.get("is_bot"))
+        playable = make_card("red", "7")
+        bot["hand"] = [playable, make_card("blue", "4")]
+        room["discard_pile"] = [make_card("red", "3")]
+        room["current_color"] = "red"
+        room["current_index"] = 1
+        room["_bot_task_scheduled"] = False
+        _schedule_bot_turn(room)
+
+    socketio.sleep(1.1)
+    events = host.get_received()
+    states = [item["args"][0] for item in events if item["name"] == "gameState"]
+    assert states
+    latest = states[-1]
+    computer = next(player for player in latest["players"] if player["isBot"])
+    assert computer["cardCount"] == 1
+    assert computer["saidUno"] is True
+    assert latest["currentPlayerId"] == joined["playerId"]
+
+    host.disconnect()
