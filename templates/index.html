@@ -4,8 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0e12">
+  <meta name="description" content="Play real-time multiplayer UNO with friends or practice offline against computer opponents.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>UNO Live</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='4') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='5') }}">
 </head>
 <body data-initial-room="{{ initial_room_code }}">
   <div id="connectionBanner" class="connection-banner hidden" role="status">Reconnecting...</div>
@@ -15,7 +19,7 @@
     <span id="actionPopupMessage">A player called UNO.</span>
   </div>
   <div class="audio-dock">
-    <button id="audioSettingsBtn" class="audio-dock-button" type="button" aria-expanded="false" aria-controls="audioSettingsPanel">Audio</button>
+    <button id="audioSettingsBtn" class="audio-dock-button" type="button" aria-expanded="false" aria-controls="audioSettingsPanel">Settings</button>
     <div id="audioSettingsPanel" class="audio-settings hidden">
       <div class="audio-settings-heading">
         <strong>Table audio</strong>
@@ -31,6 +35,12 @@
         <span>Music volume <output id="musicVolumeValue">20%</output></span>
         <input id="musicVolume" type="range" min="0" max="100" step="5" value="20">
       </label>
+      <hr class="settings-divider">
+      <strong>Accessibility</strong>
+      <label class="toggle-row"><input id="colorBlindToggle" type="checkbox"> Color symbols</label>
+      <label class="toggle-row"><input id="highContrastToggle" type="checkbox"> High contrast</label>
+      <label class="toggle-row"><input id="reducedMotionToggle" type="checkbox"> Reduce motion</label>
+      <button id="tutorialBtn" class="quiet-button" type="button">How to play</button>
     </div>
   </div>
 
@@ -41,6 +51,7 @@
           <span class="brand-uno">UNO</span><span>LIVE</span>
         </a>
         <div class="nav-actions">
+          <button id="installAppBtn" class="quiet-button hidden" type="button">Install app</button>
           <button id="themeToggle" class="quiet-button" type="button">Light mode</button>
         </div>
       </header>
@@ -78,6 +89,7 @@
             </select>
           </label>
           <button id="createRoomBtn" class="primary-button" type="button">Create room</button>
+          <a class="practice-link" href="{{ url_for('static', filename='offline.html') }}">Practice offline vs computer</a>
           <div class="divider"><span>or join with a code</span></div>
           <div class="join-row">
             <input id="roomCodeInput" name="roomCode" maxlength="6" inputmode="text" placeholder="ABC123" aria-label="Room invite code">
@@ -106,7 +118,32 @@
     </div>
   </div>
 
+  <div id="swapModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="swapTitle">
+    <div class="modal-panel">
+      <p class="kicker">Seven-O rule</p>
+      <h2 id="swapTitle">Choose a player to swap hands with</h2>
+      <div id="swapPlayerChoices" class="swap-player-choices"></div>
+      <button id="cancelSwapBtn" class="quiet-button modal-cancel" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <div id="tutorialModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+    <div class="modal-panel tutorial-panel">
+      <p class="kicker">Quick tutorial</p>
+      <h2 id="tutorialTitle">Match a card</h2>
+      <div id="tutorialVisual" class="tutorial-visual" aria-hidden="true">↔</div>
+      <p id="tutorialCopy">Play a card that matches the active color, number, or action symbol.</p>
+      <div class="tutorial-progress"><span id="tutorialStep">1 / 5</span></div>
+      <div class="tutorial-actions">
+        <button id="tutorialBackBtn" class="quiet-button" type="button">Back</button>
+        <button id="tutorialNextBtn" class="primary-button" type="button">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="remoteAudio" aria-hidden="true"></div>
+
   <script src="{{ url_for('static', filename='vendor/socket.io.min.js', v='4.8.3') }}"></script>
-  <script src="{{ url_for('static', filename='script.js', v='4') }}" defer></script>
+  <script src="{{ url_for('static', filename='script.js', v='5') }}" defer></script>
 </body>
 </html>

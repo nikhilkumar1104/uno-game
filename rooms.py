@@ -16,6 +16,8 @@ ROOM_ALPHABET = string.ascii_uppercase + string.digits
 USERNAME_PATTERN = re.compile(r"[^A-Za-z0-9 _-]")
 CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 BOT_AVATARS = ("bolt", "wave", "leaf", "star", "nova")
+BOT_DIFFICULTIES = ("easy", "medium", "hard")
+BOT_PERSONALITIES = ("balanced", "aggressive", "defensive", "wild_saver")
 
 
 def clean_username(value: Any) -> str:
@@ -58,6 +60,9 @@ class RoomManager:
     def _normalize_room(room: dict[str, Any]) -> None:
         defaults = {
             "mode": "classic",
+            "play_format": "individual",
+            "rules": {"seven_zero": False, "jump_in": False, "forced_play": False},
+            "team_scores": {"0": 0, "1": 0},
             "round_number": 0,
             "pending_draw": 0,
             "pending_draw_type": None,
@@ -66,15 +71,26 @@ class RoomManager:
             "match_champion": None,
             "rematch_choices": {},
             "rematch_deadline": None,
+            "voice_members": {},
         }
         for key, value in defaults.items():
             room.setdefault(key, value)
+        room["rules"] = {
+            "seven_zero": bool(room.get("rules", {}).get("seven_zero", False)),
+            "jump_in": bool(room.get("rules", {}).get("jump_in", False)),
+            "forced_play": bool(room.get("rules", {}).get("forced_play", False)),
+        }
+        room["voice_members"] = {}
         for row in room.get("leaderboard", {}).values():
             row.setdefault("points", 0)
             row.setdefault("wins", 0)
         room["_bot_task_scheduled"] = False
         for player in room.get("players", []):
             player.setdefault("is_bot", False)
+            player.setdefault("team", None)
+            if player.get("is_bot"):
+                player.setdefault("bot_difficulty", "medium")
+                player.setdefault("bot_personality", "balanced")
 
     def _new_code(self) -> str:
         while True:
@@ -101,9 +117,16 @@ class RoomManager:
             "hand": [],
             "said_uno": False,
             "is_bot": False,
+            "team": None,
         }
 
-    def add_bot(self, room: dict[str, Any], host_id: str) -> dict[str, Any]:
+    def add_bot(
+        self,
+        room: dict[str, Any],
+        host_id: str,
+        difficulty: Any = "medium",
+        personality: Any = "balanced",
+    ) -> dict[str, Any]:
         """Add one server-controlled seat to a lobby."""
         with self.lock:
             if room["host_id"] != host_id:
@@ -119,6 +142,12 @@ class RoomManager:
                 for index in range(1, 100)
                 if f"Computer {index}".casefold() not in used_names
             )
+            difficulty_value = str(difficulty or "medium").lower()
+            personality_value = str(personality or "balanced").lower()
+            if difficulty_value not in BOT_DIFFICULTIES:
+                raise GameRuleError("Choose Easy, Medium, or Hard computer difficulty.")
+            if personality_value not in BOT_PERSONALITIES:
+                raise GameRuleError("Choose a valid computer personality.")
             bot = {
                 "id": f"bot_{secrets.token_urlsafe(18)}",
                 "username": f"Computer {number}",
@@ -130,6 +159,9 @@ class RoomManager:
                 "hand": [],
                 "said_uno": False,
                 "is_bot": True,
+                "bot_difficulty": difficulty_value,
+                "bot_personality": personality_value,
+                "team": None,
             }
             room["players"].append(bot)
             room["updated_at"] = time.time()
@@ -172,6 +204,9 @@ class RoomManager:
                 "leaderboard": {},
                 "match_history": [],
                 "mode": "classic",
+                "play_format": "individual",
+                "rules": {"seven_zero": False, "jump_in": False, "forced_play": False},
+                "team_scores": {"0": 0, "1": 0},
                 "round_number": 0,
                 "game_id": None,
                 "draw_pile": [],
@@ -192,6 +227,7 @@ class RoomManager:
                 "match_champion": None,
                 "rematch_choices": {},
                 "rematch_deadline": None,
+                "voice_members": {},
                 "created_at": now,
                 "updated_at": now,
             }

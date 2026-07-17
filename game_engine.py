@@ -11,6 +11,12 @@ from typing import Any
 COLORS = ("red", "yellow", "green", "blue")
 ACTION_VALUES = ("skip", "reverse", "draw2")
 GAME_MODES = ("classic", "wild")
+PLAY_FORMATS = ("individual", "teams")
+RULE_DEFAULTS = {
+    "seven_zero": False,
+    "jump_in": False,
+    "forced_play": False,
+}
 SCORE_TARGET = 500
 
 
@@ -118,7 +124,7 @@ def _stack_is_legal(room: dict[str, Any], card: dict[str, str]) -> bool:
     if pending_type == "draw2":
         return card["value"] == "draw2"
     if pending_type == "wild4":
-        return card["value"] in ("wild4", "draw2")
+        return card["value"] == "wild4"
     return False
 
 
@@ -178,6 +184,20 @@ def set_game_mode(room: dict[str, Any], mode: str) -> None:
     room["updated_at"] = time.time()
 
 
+def set_room_options(
+    room: dict[str, Any], play_format: str, rules: dict[str, Any] | None
+) -> None:
+    """Validate and store host-controlled lobby options."""
+    if room["status"] != "lobby":
+        raise GameRuleError("Table options can be changed only in the lobby.")
+    if play_format not in PLAY_FORMATS:
+        raise GameRuleError("Choose individual play or 2v2 teams.")
+    requested = rules if isinstance(rules, dict) else {}
+    room["play_format"] = play_format
+    room["rules"] = {key: bool(requested.get(key, False)) for key in RULE_DEFAULTS}
+    room["updated_at"] = time.time()
+
+
 def start_game(room: dict[str, Any]) -> None:
     connected = [
         player
@@ -188,14 +208,21 @@ def start_game(room: dict[str, Any]) -> None:
         raise GameRuleError("At least 2 connected players are required.")
     if len(connected) > 6:
         raise GameRuleError("A room supports at most 6 active players.")
+    if room.get("play_format", "individual") == "teams" and len(connected) != 4:
+        raise GameRuleError("2v2 team mode requires exactly 4 active players.")
 
     connected_ids = {player["id"] for player in connected}
+    active_seat = 0
     for player in room["players"]:
         player["spectator"] = player["id"] not in connected_ids
         player["hand"] = []
         player["said_uno"] = False
         if not player["spectator"]:
+            player["team"] = active_seat % 2 if room.get("play_format") == "teams" else None
+            active_seat += 1
             _leaderboard_row(room, player)
+        else:
+            player["team"] = None
 
     room.update(
         {
@@ -222,6 +249,8 @@ def start_game(room: dict[str, Any]) -> None:
             "rematch_deadline": None,
         }
     )
+    room.setdefault("rules", dict(RULE_DEFAULTS))
+    room.setdefault("team_scores", {"0": 0, "1": 0})
 
     for _ in range(7):
         for player in active_players(room):
@@ -251,24 +280,47 @@ def _require_turn(room: dict[str, Any], player_id: str) -> dict[str, Any]:
 
 
 def _finish_round(room: dict[str, Any], player: dict[str, Any]) -> None:
+    team_mode = room.get("play_format", "individual") == "teams"
+    winning_team = player.get("team") if team_mode else None
+    winners = (
+        [seat for seat in active_players(room) if seat.get("team") == winning_team]
+        if team_mode
+        else [player]
+    )
     points = sum(
         hand_points(opponent["hand"])
         for opponent in active_players(room)
-        if opponent["id"] != player["id"]
+        if (opponent.get("team") != winning_team if team_mode else opponent["id"] != player["id"])
     )
+    for winner in winners:
+        row = _leaderboard_row(room, winner)
+        row["wins"] += 1
+        row["points"] += points
     row = _leaderboard_row(room, player)
-    row["wins"] += 1
-    row["points"] += points
+    team_total = None
+    if team_mode:
+        key = str(winning_team)
+        scores = room.setdefault("team_scores", {"0": 0, "1": 0})
+        scores[key] = int(scores.get(key, 0)) + points
+        team_total = scores[key]
     room["status"] = "finished"
     room["winner"] = {
         "id": player["id"],
         "username": player["username"],
         "points": points,
-        "totalPoints": row["points"],
+        "totalPoints": team_total if team_mode else row["points"],
+        "isTeam": team_mode,
+        "team": winning_team,
+        "teamLabel": f"Team {'Red' if winning_team == 0 else 'Blue'}" if team_mode else None,
+        "members": [winner["username"] for winner in winners],
     }
     room["match_champion"] = (
-        {"id": player["id"], "username": player["username"], "points": row["points"]}
-        if row["points"] >= SCORE_TARGET
+        {
+            "id": player["id"],
+            "username": room["winner"]["teamLabel"] if team_mode else player["username"],
+            "points": team_total if team_mode else row["points"],
+        }
+        if (team_total if team_mode else row["points"]) >= SCORE_TARGET
         else None
     )
     room["uno_pending_player_id"] = None
@@ -284,16 +336,80 @@ def _finish_round(room: dict[str, Any], player: dict[str, Any]) -> None:
     room.setdefault("match_history", []).append(
         {
             "game_id": room["game_id"],
-            "winner": player["username"],
+            "winner": room["winner"].get("teamLabel") or player["username"],
             "points": points,
             "players": [seat["username"] for seat in active_players(room)],
             "moves": room["move_count"],
             "finished_at": int(time.time()),
             "mode": room.get("mode", "classic"),
+            "play_format": room.get("play_format", "individual"),
         }
     )
     room["match_history"] = room["match_history"][-20:]
-    _log(room, f"{player['username']} won the round and earned {points} points.")
+    winner_name = room["winner"]["teamLabel"] if team_mode else player["username"]
+    _log(room, f"{winner_name} won the round and earned {points} points.")
+
+
+def _rule_enabled(room: dict[str, Any], name: str) -> bool:
+    return bool(room.get("rules", {}).get(name, False))
+
+
+def _exact_jump_match(card: dict[str, str], top: dict[str, str]) -> bool:
+    return card["color"] == top["color"] and card["value"] == top["value"]
+
+
+def _jump_in_player(
+    room: dict[str, Any], player_id: str, card: dict[str, str] | None
+) -> dict[str, Any] | None:
+    """Return a valid out-of-turn jumper and move the turn marker to that seat."""
+    if not _rule_enabled(room, "jump_in") or not card:
+        return None
+    if room.get("wild4_challenge") or room.get("pending_draw") or room.get("drawn_by_id"):
+        return None
+    players = active_players(room)
+    player = next(
+        (
+            seat
+            for seat in players
+            if seat["id"] == player_id and seat["connected"] and not seat.get("left")
+        ),
+        None,
+    )
+    if not player or not _exact_jump_match(card, room["discard_pile"][-1]):
+        return None
+    room["current_index"] = players.index(player)
+    return player
+
+
+def _apply_seven_zero(
+    room: dict[str, Any], player: dict[str, Any], card: dict[str, str], target_id: str | None
+) -> None:
+    if not _rule_enabled(room, "seven_zero"):
+        return
+    players = active_players(room)
+    if card["value"] == "7":
+        target = next(
+            (seat for seat in players if seat["id"] == target_id and seat["id"] != player["id"]),
+            None,
+        )
+        if not target:
+            raise GameRuleError("Choose another player to swap hands with.")
+        player["hand"], target["hand"] = target["hand"], player["hand"]
+        player["said_uno"] = False
+        target["said_uno"] = False
+        _log(room, f"{player['username']} swapped hands with {target['username']}.")
+    elif card["value"] == "0" and len(players) > 1:
+        hands = [seat["hand"] for seat in players]
+        for index, seat in enumerate(players):
+            source = (index - room["direction"]) % len(players)
+            seat["hand"] = hands[source]
+            seat["said_uno"] = False
+        _log(room, "All hands rotated around the table.")
+
+
+def _best_forced_color(hand: list[dict[str, str]]) -> str:
+    counts = {color: sum(card["color"] == color for card in hand) for color in COLORS}
+    return max(COLORS, key=lambda color: counts[color])
 
 
 def _apply_classic_effect(
@@ -352,10 +468,25 @@ def _apply_wild_effect(room: dict[str, Any], card: dict[str, str]) -> None:
 
 
 def play_card(
-    room: dict[str, Any], player_id: str, card_id: str, chosen_color: str | None = None
+    room: dict[str, Any],
+    player_id: str,
+    card_id: str,
+    chosen_color: str | None = None,
+    target_player_id: str | None = None,
 ) -> None:
-    player = _require_turn(room, player_id)
-    card = next((item for item in player["hand"] if item["id"] == card_id), None)
+    if room["status"] != "playing":
+        raise GameRuleError("The game is not active.")
+    candidate = next((seat for seat in active_players(room) if seat["id"] == player_id), None)
+    card = (
+        next((item for item in candidate["hand"] if item["id"] == card_id), None)
+        if candidate
+        else None
+    )
+    turn = current_player(room)
+    jumped = bool(turn and turn["id"] != player_id)
+    player = _jump_in_player(room, player_id, card) if jumped else _require_turn(room, player_id)
+    if not player:
+        raise GameRuleError("It is not your turn, and that card cannot Jump In.")
     if not card:
         raise GameRuleError("That card is not in your hand.")
     if room.get("drawn_by_id") == player_id and room.get("drawn_card_id") != card_id:
@@ -366,6 +497,16 @@ def play_card(
         raise GameRuleError("That card cannot be played now.")
     if card["color"] == "wild" and chosen_color not in COLORS:
         raise GameRuleError("Choose red, yellow, green, or blue.")
+    if (
+        _rule_enabled(room, "seven_zero")
+        and card["value"] == "7"
+        and len(player["hand"]) > 1
+        and not any(
+            seat["id"] == target_player_id and seat["id"] != player_id
+            for seat in active_players(room)
+        )
+    ):
+        raise GameRuleError("Choose another player to swap hands with.")
 
     # A rejected/malformed action must not close another player's Catch UNO window.
     _close_uno_window(room)
@@ -380,10 +521,13 @@ def play_card(
     _clear_draw_window(room)
     color_note = f" and chose {chosen_color}" if card["color"] == "wild" else ""
     _log(room, f"{player['username']} played {card['value']}{color_note}.")
+    if jumped:
+        _log(room, f"{player['username']} jumped in with an exact match!")
 
     if not player["hand"]:
         _finish_round(room, player)
         return
+    _apply_seven_zero(room, player, card, target_player_id)
     if len(player["hand"]) == 1:
         room["uno_pending_player_id"] = player["id"]
         _log(room, f"{player['username']} has one card and must call UNO.")
@@ -419,6 +563,16 @@ def draw_card(room: dict[str, Any], player_id: str) -> None:
     if card_is_playable(room, player, card):
         room["drawn_by_id"] = player_id
         room["drawn_card_id"] = card["id"]
+        if _rule_enabled(room, "forced_play"):
+            chosen_color = (
+                _best_forced_color(
+                    [item for item in player["hand"] if item["id"] != card["id"]]
+                )
+                if card["color"] == "wild"
+                else None
+            )
+            _log(room, f"Forced Play activated for {player['username']}.")
+            play_card(room, player_id, card["id"], chosen_color)
     else:
         advance_turn(room)
         ensure_connected_turn(room)
@@ -534,7 +688,12 @@ def rematch_all_ready(room: dict[str, Any]) -> bool:
     connected = [
         p for p in active_players(room) if p["connected"] and not p.get("left")
     ]
-    return len(connected) >= 2 and all(
+    enough_players = (
+        len(connected) == 4
+        if room.get("play_format", "individual") == "teams"
+        else len(connected) >= 2
+    )
+    return enough_players and all(
         room.get("rematch_choices", {}).get(p["id"]) == "ready" for p in connected
     )
 
@@ -562,18 +721,22 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
     top_card = room["discard_pile"][-1] if room.get("discard_pile") else None
     challenge = room.get("wild4_challenge")
     playable_ids: list[str] = []
-    if (
-        viewer
-        and turn
-        and viewer["id"] == turn["id"]
-        and not viewer["spectator"]
-        and not challenge
-    ):
-        if room.get("drawn_by_id") == viewer_id:
-            playable_ids = [room["drawn_card_id"]]
-        else:
+    if viewer and turn and not viewer["spectator"] and not challenge:
+        if viewer["id"] == turn["id"]:
+            if room.get("drawn_by_id") == viewer_id:
+                playable_ids = [room["drawn_card_id"]]
+            else:
+                playable_ids = [
+                    card["id"] for card in viewer["hand"] if card_is_playable(room, viewer, card)
+                ]
+        elif (
+            _rule_enabled(room, "jump_in")
+            and not room.get("pending_draw")
+            and not room.get("drawn_by_id")
+            and top_card
+        ):
             playable_ids = [
-                card["id"] for card in viewer["hand"] if card_is_playable(room, viewer, card)
+                card["id"] for card in viewer["hand"] if _exact_jump_match(card, top_card)
             ]
 
     pending_uno_id = room.get("uno_pending_player_id")
@@ -609,6 +772,9 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
         "code": room["code"],
         "status": room["status"],
         "mode": room.get("mode", "classic"),
+        "playFormat": room.get("play_format", "individual"),
+        "rules": {**RULE_DEFAULTS, **room.get("rules", {})},
+        "teamScores": room.get("team_scores", {"0": 0, "1": 0}),
         "scoreTarget": SCORE_TARGET,
         "roundNumber": room.get("round_number", 0),
         "hostId": room["host_id"],
@@ -631,6 +797,9 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
                 "cardCount": len(player["hand"]),
                 "saidUno": player["said_uno"],
                 "isBot": bool(player.get("is_bot")),
+                "botDifficulty": player.get("bot_difficulty"),
+                "botPersonality": player.get("bot_personality"),
+                "team": player.get("team"),
             }
             for player in room["players"]
         ],
@@ -656,6 +825,8 @@ def lobby_state(room: dict[str, Any]) -> dict[str, Any]:
         "code": room["code"],
         "status": room["status"],
         "mode": room.get("mode", "classic"),
+        "playFormat": room.get("play_format", "individual"),
+        "rules": {**RULE_DEFAULTS, **room.get("rules", {})},
         "hostId": room["host_id"],
         "players": [
             {
@@ -668,6 +839,9 @@ def lobby_state(room: dict[str, Any]) -> dict[str, Any]:
                 "cardCount": len(player["hand"]),
                 "saidUno": player["said_uno"],
                 "isBot": bool(player.get("is_bot")),
+                "botDifficulty": player.get("bot_difficulty"),
+                "botPersonality": player.get("bot_personality"),
+                "team": player.get("team"),
             }
             for player in room["players"]
         ],

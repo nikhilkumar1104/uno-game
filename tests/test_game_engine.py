@@ -15,6 +15,7 @@ from game_engine import (
     public_state,
     queue_rematch,
     rematch_all_ready,
+    set_room_options,
     start_game,
 )
 
@@ -211,16 +212,15 @@ def test_wild_mode_stacks_draw_twos_and_collects_total_penalty():
     assert room["current_index"] == 1
 
 
-def test_wild_mode_allows_draw_two_on_wild_four_but_not_reverse_order():
+def test_wild_mode_allows_only_same_type_draw_stacking():
     room = rig_playing_room("wild")
     wild_four = make_card("wild", "wild4")
     draw_two = make_card("green", "draw2")
     room["players"][0]["hand"] = [wild_four, make_card("blue", "1")]
     room["players"][1]["hand"] = [draw_two, make_card("green", "3")]
     play_card(room, "p0", wild_four["id"], "blue")
-    play_card(room, "p1", draw_two["id"])
-    assert room["pending_draw"] == 6
-    assert room["pending_draw_type"] == "draw2"
+    with pytest.raises(GameRuleError, match="stacked"):
+        play_card(room, "p1", draw_two["id"])
 
     room = rig_playing_room("wild")
     draw_two = make_card("red", "draw2")
@@ -230,6 +230,93 @@ def test_wild_mode_allows_draw_two_on_wild_four_but_not_reverse_order():
     play_card(room, "p0", draw_two["id"])
     with pytest.raises(GameRuleError, match="stacked"):
         play_card(room, "p1", wild_four["id"], "blue")
+
+
+def test_seven_swaps_hands_with_server_validated_target():
+    room = rig_playing_room()
+    room["rules"] = {"seven_zero": True, "jump_in": False, "forced_play": False}
+    seven = make_card("red", "7")
+    kept = make_card("blue", "1")
+    target_cards = [make_card("green", "2"), make_card("yellow", "3")]
+    room["players"][0]["hand"] = [seven, kept]
+    room["players"][1]["hand"] = target_cards
+
+    with pytest.raises(GameRuleError, match="Choose another player"):
+        play_card(room, "p0", seven["id"])
+    assert seven in room["players"][0]["hand"]
+
+    play_card(room, "p0", seven["id"], target_player_id="p1")
+    assert room["players"][0]["hand"] == target_cards
+    assert room["players"][1]["hand"] == [kept]
+
+
+def test_zero_rotates_hands_in_current_direction():
+    room = room_with_players(3)
+    room.update(rig_playing_room())
+    room["players"] = room_with_players(3)["players"]
+    room["rules"] = {"seven_zero": True, "jump_in": False, "forced_play": False}
+    zero = make_card("red", "0")
+    hands = [[zero, make_card("blue", "1")], [make_card("green", "2")], [make_card("yellow", "3")]]
+    for player, hand in zip(room["players"], hands):
+        player["hand"] = hand
+    play_card(room, "p0", zero["id"])
+    assert room["players"][0]["hand"][0]["value"] == "3"
+    assert room["players"][1]["hand"][0]["value"] == "1"
+    assert room["players"][2]["hand"][0]["value"] == "2"
+
+
+def test_jump_in_accepts_only_exact_out_of_turn_match():
+    room = room_with_players(3)
+    base = rig_playing_room()
+    room.update(base)
+    room["players"] = room_with_players(3)["players"]
+    room["rules"] = {"seven_zero": False, "jump_in": True, "forced_play": False}
+    exact = make_card("red", "5")
+    same_value_wrong_color = make_card("blue", "5")
+    room["players"][1]["hand"] = [same_value_wrong_color, make_card("green", "4")]
+    room["players"][2]["hand"] = [exact, make_card("yellow", "8")]
+    with pytest.raises(GameRuleError, match="cannot Jump In"):
+        play_card(room, "p1", same_value_wrong_color["id"])
+    play_card(room, "p2", exact["id"])
+    assert room["discard_pile"][-1]["id"] == exact["id"]
+    assert room["current_index"] == 0
+
+
+def test_forced_play_automatically_uses_playable_drawn_card():
+    room = rig_playing_room()
+    room["rules"] = {"seven_zero": False, "jump_in": False, "forced_play": True}
+    forced = make_card("red", "8")
+    room["draw_pile"].append(forced)
+    room["players"][0]["hand"] = [make_card("blue", "1"), make_card("green", "2")]
+    draw_card(room, "p0")
+    assert room["discard_pile"][-1]["id"] == forced["id"]
+    assert room["drawn_card_id"] is None
+    assert room["current_index"] == 1
+
+
+def test_team_mode_requires_four_and_scores_only_opposing_team_hands():
+    room = room_with_players(3)
+    set_room_options(room, "teams", {})
+    with pytest.raises(GameRuleError, match="exactly 4"):
+        start_game(room)
+
+    room = room_with_players(4)
+    set_room_options(room, "teams", {})
+    start_game(room)
+    assert [player["team"] for player in room["players"]] == [0, 1, 0, 1]
+    winner = room["players"][0]
+    winner_card = make_card("red", "4")
+    winner["hand"] = [winner_card]
+    room["players"][1]["hand"] = [make_card("blue", "9")]
+    room["players"][2]["hand"] = [make_card("wild", "wild")]
+    room["players"][3]["hand"] = [make_card("green", "skip")]
+    room["discard_pile"] = [make_card("red", "1")]
+    room["current_color"] = "red"
+    room["current_index"] = 0
+    play_card(room, winner["id"], winner_card["id"])
+    assert room["winner"]["isTeam"] is True
+    assert room["winner"]["points"] == 29
+    assert room["team_scores"]["0"] == 29
 
 
 def test_round_winner_receives_official_card_points_and_rematch_window():

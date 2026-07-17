@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0e12">
+  <title>Offline Practice | UNO Live</title>
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="stylesheet" href="/static/offline.css">
+</head>
+<body>
+  <main class="practice-shell">
+    <header>
+      <a href="/" class="brand"><span>UNO</span> LIVE</a>
+      <div class="practice-options">
+        <label>Computer
+          <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+        <button id="newGame" type="button">New game</button>
+      </div>
+    </header>
+
+    <section class="practice-table" aria-labelledby="status">
+      <div class="opponent">
+        <span class="avatar">AI</span>
+        <div><strong>Computer</strong><small id="botCount">7 cards</small></div>
+      </div>
+      <h1 id="status">Your turn</h1>
+      <div class="piles">
+        <button id="drawPile" class="card back" type="button" aria-label="Draw a card"><span>UNO</span><small id="deckCount">93</small></button>
+        <div id="discard" aria-label="Discard pile"></div>
+      </div>
+      <div id="winner" class="winner hidden">
+        <h2 id="winnerText">You win!</h2>
+        <button id="playAgain" type="button">Play again</button>
+      </div>
+    </section>
+
+    <section class="hand-area">
+      <div class="hand-heading">
+        <div><small>YOUR CARDS</small><strong><span id="handCount">7</span> in hand</strong></div>
+        <div>
+          <button id="passBtn" type="button" disabled>Keep &amp; pass</button>
+          <button id="unoBtn" class="uno-button" type="button" disabled>UNO</button>
+        </div>
+      </div>
+      <div id="hand" class="hand" aria-label="Your cards"></div>
+    </section>
+    <p class="offline-note">Offline practice runs entirely on this device. No account or connection is needed.</p>
+  </main>
+  <div id="colorPicker" class="modal hidden" role="dialog" aria-modal="true">
+    <div><h2>Choose a color</h2><section>
+      <button data-color="red">Red</button><button data-color="yellow">Yellow</button>
+      <button data-color="green">Green</button><button data-color="blue">Blue</button>
+    </section></div>
+  </div>
+  <script src="/static/offline.js"></script>
+</body>
+</html>

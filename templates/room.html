@@ -27,6 +27,14 @@
           </div>
           <span id="modeLockHint" class="player-note">Host selects</span>
         </div>
+        <div class="format-picker" role="group" aria-label="Player format">
+          <button class="format-option selected" data-format="individual" type="button">
+            <strong>Every player for themselves</strong><span>2–6 seats</span>
+          </button>
+          <button class="format-option" data-format="teams" type="button">
+            <strong>2v2 teams</strong><span>Exactly 4 seats, alternating partners</span>
+          </button>
+        </div>
         <div class="mode-picker">
           <button class="mode-option selected" data-mode="classic" type="button">
             <strong>Classic</strong>
@@ -34,9 +42,17 @@
           </button>
           <button class="mode-option" data-mode="wild" type="button">
             <strong>Wild</strong>
-            <span>Stack +2 on +2, and +4 or +2 on +4</span>
+            <span>Stack same type only: +2 on +2 and +4 on +4</span>
           </button>
         </div>
+        <details class="custom-rules">
+          <summary>Custom room rules</summary>
+          <div class="rule-builder">
+            <label><input class="room-rule-input" data-rule="seven_zero" type="checkbox"> <span><strong>Seven-O</strong><small>7 swaps hands; 0 rotates every hand</small></span></label>
+            <label><input class="room-rule-input" data-rule="jump_in" type="checkbox"> <span><strong>Jump-In</strong><small>Play an exact match out of turn</small></span></label>
+            <label><input class="room-rule-input" data-rule="forced_play" type="checkbox"> <span><strong>Forced Play</strong><small>Playable drawn cards are used immediately</small></span></label>
+          </div>
+        </details>
       </section>
       <section class="computer-section" aria-labelledby="computerHeading">
         <div>
@@ -44,7 +60,24 @@
           <h2 id="computerHeading">Computer opponents</h2>
           <p class="status-copy">Add up to five server-controlled players. Computers follow the selected table rules.</p>
         </div>
-        <button id="addBotBtn" class="secondary-button" type="button">Add computer</button>
+        <div class="bot-controls">
+          <label>Difficulty
+            <select id="botDifficulty">
+              <option value="easy">Easy</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+          <label>Personality
+            <select id="botPersonality">
+              <option value="balanced">Balanced</option>
+              <option value="aggressive">Aggressive</option>
+              <option value="defensive">Defensive</option>
+              <option value="wild_saver">Wild saver</option>
+            </select>
+          </label>
+          <button id="addBotBtn" class="secondary-button" type="button">Add computer</button>
+        </div>
       </section>
       <div id="lobbyPlayers" class="lobby-player-grid"></div>
       <div class="lobby-footer">
@@ -62,6 +95,13 @@
         <span class="live-dot">Live</span>
       </div>
       <div id="lobbyChatMessages" class="chat-messages" aria-live="polite"></div>
+      <div class="quick-reactions" aria-label="Quick reactions">
+        <button data-reaction="😂" type="button" aria-label="Send laughing reaction">😂</button>
+        <button data-reaction="😡" type="button" aria-label="Send angry reaction">😡</button>
+        <button data-reaction="😱" type="button" aria-label="Send shocked reaction">😱</button>
+        <button data-reaction="🔥" type="button" aria-label="Send fire reaction">🔥</button>
+        <button data-reaction="👏" type="button" aria-label="Send applause reaction">👏</button>
+      </div>
       <form id="lobbyChatForm" class="chat-form">
         <input id="lobbyChatInput" maxlength="240" placeholder="Write a message" aria-label="Room chat message">
         <button class="send-button" type="submit">Send</button>

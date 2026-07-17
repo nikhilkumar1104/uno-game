@@ -1,0 +1,23 @@
+{
+  "name": "UNO Live — Multiplayer Card Game",
+  "short_name": "UNO Live",
+  "description": "Play UNO online with friends or practice offline against computer opponents.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0e12",
+  "theme_color": "#ea3348",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Offline practice",
+      "short_name": "Practice",
+      "url": "/static/offline.html",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

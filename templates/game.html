@@ -10,6 +10,8 @@
       </div>
     </div>
     <div class="header-actions">
+      <button id="mobileSeatsBtn" class="quiet-button mobile-panel-button" type="button">Seats</button>
+      <button id="mobileTalkBtn" class="quiet-button mobile-panel-button" type="button">Talk</button>
       <button id="copyGameCodeBtn" class="quiet-button" type="button">Copy code</button>
       <button id="leaveGameBtn" class="quiet-button" type="button">Leave</button>
     </div>
@@ -41,6 +43,10 @@
         <div class="table-status">
           <span id="turnPill" class="turn-pill">Waiting</span>
           <span id="colorStatus" class="color-status"><i></i><span>No color</span></span>
+        </div>
+        <div id="teamScoreBanner" class="team-score-banner hidden">
+          <span>Team Red <strong id="teamRedScore">0</strong></span>
+          <span>Team Blue <strong id="teamBlueScore">0</strong></span>
         </div>
         <div id="stackBanner" class="stack-banner hidden">Draw stack: <strong id="stackTotal">0</strong></div>
         <div class="pile-row">
@@ -98,6 +104,21 @@
     </section>
 
     <aside class="game-aside">
+      <section class="voice-panel" aria-labelledby="voiceHeading">
+        <div class="voice-heading">
+          <div>
+            <p class="kicker">Peer-to-peer audio</p>
+            <h2 id="voiceHeading">Table voice</h2>
+          </div>
+          <span id="voiceQuality" class="quality-badge offline">Offline</span>
+        </div>
+        <div id="voiceParticipants" class="voice-participants"><span class="empty-state">Voice is optional.</span></div>
+        <div class="voice-actions">
+          <button id="voiceJoinBtn" class="secondary-button" type="button">Join voice</button>
+          <button id="voiceMuteBtn" class="quiet-button hidden" type="button">Mute</button>
+          <button id="voiceDeafenBtn" class="quiet-button hidden" type="button">Deafen</button>
+        </div>
+      </section>
       <section class="chat-panel game-chat" aria-label="Game chat">
         <div class="chat-heading">
           <div>
@@ -107,6 +128,13 @@
           <span class="live-dot">Live</span>
         </div>
         <div id="gameChatMessages" class="chat-messages" aria-live="polite"></div>
+        <div class="quick-reactions" aria-label="Quick reactions">
+          <button data-reaction="😂" type="button" aria-label="Send laughing reaction">😂</button>
+          <button data-reaction="😡" type="button" aria-label="Send angry reaction">😡</button>
+          <button data-reaction="😱" type="button" aria-label="Send shocked reaction">😱</button>
+          <button data-reaction="🔥" type="button" aria-label="Send fire reaction">🔥</button>
+          <button data-reaction="👏" type="button" aria-label="Send applause reaction">👏</button>
+        </div>
         <form id="gameChatForm" class="chat-form">
           <input id="gameChatInput" maxlength="240" placeholder="Write a message" aria-label="Game chat message">
           <button class="send-button" type="submit">Send</button>

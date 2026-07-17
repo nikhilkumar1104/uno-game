@@ -23,6 +23,11 @@ def test_index_bundles_socket_client_instead_of_external_cdn(tmp_path):
     asset = client.get("/static/vendor/socket.io.min.js")
     assert asset.status_code == 200
     assert b"Socket.IO v4.8.3" in asset.data[:200]
+    assert client.get("/static/manifest.webmanifest").status_code == 200
+    assert client.get("/static/offline.html").status_code == 200
+    service_worker = client.get("/sw.js")
+    assert service_worker.status_code == 200
+    assert service_worker.headers["Service-Worker-Allowed"] == "/"
 
 
 def test_full_socket_flow_winner_persistence_reconnect_and_rematch(tmp_path):
@@ -228,3 +233,76 @@ def test_solo_room_adds_and_runs_server_controlled_computer(tmp_path):
     assert latest["currentPlayerId"] == joined["playerId"]
 
     host.disconnect()
+
+
+def test_room_options_bot_profiles_and_voice_signaling(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'release1.sqlite3'}",
+            "SECRET_KEY": "release-one-secret",
+        }
+    )
+    host = socketio.test_client(app)
+    guest = socketio.test_client(app)
+    host.emit("createRoom", {"username": "Voice Host", "avatar": "ember"})
+    host_joined = received_payload(host, "roomJoined")
+    code = host_joined["roomCode"]
+    host.get_received()
+
+    host.emit(
+        "setRoomOptions",
+        {
+            "roomCode": code,
+            "playFormat": "individual",
+            "rules": {"seven_zero": True, "jump_in": True, "forced_play": True},
+        },
+    )
+    lobby = received_payload(host, "lobbyState")
+    assert all(lobby["rules"].values())
+
+    host.emit(
+        "addBot",
+        {"roomCode": code, "difficulty": "hard", "personality": "aggressive"},
+    )
+    lobby = received_payload(host, "lobbyState")
+    bot = next(player for player in lobby["players"] if player["isBot"])
+    assert bot["botDifficulty"] == "hard"
+    assert bot["botPersonality"] == "aggressive"
+
+    guest.emit(
+        "joinRoom",
+        {"roomCode": code, "username": "Voice Guest", "avatar": "wave"},
+    )
+    guest_joined = received_payload(guest, "roomJoined")
+    host.get_received()
+    guest.get_received()
+    host.emit("voiceJoin", {"roomCode": code})
+    host.get_received()
+    guest.get_received()
+    guest.emit("voiceJoin", {"roomCode": code})
+    host_events = host.get_received()
+    participants = next(
+        event["args"][0]
+        for event in host_events
+        if event["name"] == "voiceParticipants"
+    )
+    assert {member["username"] for member in participants["members"]} == {
+        "Voice Host",
+        "Voice Guest",
+    }
+
+    host.emit(
+        "voiceSignal",
+        {
+            "roomCode": code,
+            "targetPlayerId": guest_joined["playerId"],
+            "signal": {"type": "offer", "description": {"type": "offer", "sdp": "test"}},
+        },
+    )
+    signal = received_payload(guest, "voiceSignal")
+    assert signal["fromPlayerId"] == host_joined["playerId"]
+    assert signal["signal"]["type"] == "offer"
+
+    host.disconnect()
+    guest.disconnect()

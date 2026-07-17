@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+import json
 import time
 from pathlib import Path
 from typing import Any, Callable
 
-from flask import Flask, current_app, jsonify, render_template, request
+from flask import Flask, current_app, jsonify, render_template, request, send_from_directory
 from flask_socketio import SocketIO, emit, join_room as socket_join_room, leave_room as socket_leave_room
 
 from bot_player import perform_bot_turn
@@ -27,6 +28,7 @@ from game_engine import (
     rematch_all_ready,
     return_to_lobby,
     set_game_mode,
+    set_room_options,
     start_game,
 )
 from models import db, delete_room, ensure_schema, load_rooms, record_match, save_room
@@ -97,12 +99,19 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             timestamp=int(time.time()),
         )
 
+    @app.get("/sw.js")
+    def service_worker():
+        response = send_from_directory(app.static_folder, "sw.js")
+        response.headers["Service-Worker-Allowed"] = "/"
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.after_request
     def security_headers(response):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
         return response
 
     return app
@@ -149,6 +158,31 @@ def _send_state(room: dict[str, Any], sid: str | None = None) -> None:
             socketio.emit(event, payload, to=player_sid)
 
 
+def _voice_payload(room: dict[str, Any]) -> dict[str, Any]:
+    members = room.get("voice_members", {})
+    return {
+        "members": [
+            {
+                "playerId": player["id"],
+                "username": player["username"],
+                "speaking": bool(members.get(player["id"], {}).get("speaking")),
+            }
+            for player in room["players"]
+            if player["id"] in members and player["connected"] and not player.get("is_bot")
+        ]
+    }
+
+
+def _broadcast_voice(room: dict[str, Any]) -> None:
+    socketio.emit("voiceParticipants", _voice_payload(room), to=room["code"])
+
+
+def _remove_voice_member(room: dict[str, Any], player_id: str) -> None:
+    if room.setdefault("voice_members", {}).pop(player_id, None) is not None:
+        socketio.emit("voicePeerLeft", {"playerId": player_id}, to=room["code"])
+        _broadcast_voice(room)
+
+
 def _with_player_action(
     data: dict[str, Any] | None,
     action: Callable[[dict[str, Any], str, dict[str, Any]], str | None],
@@ -184,9 +218,10 @@ def _with_player_action(
         if sound_effect:
             socketio.emit("soundEffect", {"type": sound_effect}, to=room["code"])
         if finished_transition:
+            winner_name = room["winner"].get("teamLabel") or room["winner"]["username"]
             socketio.emit(
                 "notification",
-                {"message": f"{room['winner']['username']} won {room['winner']['points']} points!"},
+                {"message": f"{winner_name} won {room['winner']['points']} points!"},
                 to=room["code"],
             )
             _schedule_rematch(room)
@@ -264,9 +299,10 @@ def _bot_turn_worker(app_object: Flask, room_code: str, game_id: str | None) -> 
         for effect in result.get("effects", []):
             socketio.emit("soundEffect", {"type": effect}, to=room_code)
         if finished_transition and room:
+            winner_name = room["winner"].get("teamLabel") or room["winner"]["username"]
             socketio.emit(
                 "notification",
-                {"message": f"{room['winner']['username']} won {room['winner']['points']} points!"},
+                {"message": f"{winner_name} won {room['winner']['points']} points!"},
                 to=room_code,
             )
             _schedule_rematch(room)
@@ -302,7 +338,12 @@ def _rematch_timeout(app_object: Flask, room_code: str, game_id: str) -> None:
                 for player in room["players"]
                 if not player["spectator"] and player["connected"] and not player.get("left")
             ]
-            if len(connected) >= 2:
+            can_start = (
+                len(connected) == 4
+                if room.get("play_format", "individual") == "teams"
+                else len(connected) >= 2
+            )
+            if can_start:
                 start_game(room)
                 message = "The next round started automatically."
             else:
@@ -421,11 +462,32 @@ def handle_set_game_mode(data: dict[str, Any] | None) -> None:
     _with_player_action(data, action)
 
 
+@socketio.on("setRoomOptions")
+def handle_set_room_options(data: dict[str, Any] | None) -> None:
+    def action(room: dict[str, Any], player_id: str, payload: dict[str, Any]) -> str:
+        if room["host_id"] != player_id:
+            raise GameRuleError("Only the host can change table options.")
+        set_room_options(
+            room,
+            str(payload.get("playFormat") or "individual"),
+            payload.get("rules"),
+        )
+        return "Custom table rules updated."
+
+    _with_player_action(data, action)
+
+
 @socketio.on("addBot")
 def handle_add_bot(data: dict[str, Any] | None) -> None:
-    def action(room: dict[str, Any], player_id: str, _: dict[str, Any]) -> str:
-        bot = _manager().add_bot(room, player_id)
-        return f"{bot['username']} joined as a computer opponent."
+    def action(room: dict[str, Any], player_id: str, payload: dict[str, Any]) -> str:
+        bot = _manager().add_bot(
+            room,
+            player_id,
+            payload.get("difficulty"),
+            payload.get("personality"),
+        )
+        label = str(bot["bot_difficulty"]).title()
+        return f"{bot['username']} joined as a {label} computer opponent."
 
     _with_player_action(data, action)
 
@@ -442,14 +504,32 @@ def handle_remove_bot(data: dict[str, Any] | None) -> None:
 @socketio.on("playCard")
 def handle_play_card(data: dict[str, Any] | None) -> None:
     def action(room: dict[str, Any], player_id: str, payload: dict[str, Any]) -> None:
-        play_card(room, player_id, str(payload.get("cardId") or ""), payload.get("chosenColor"))
+        play_card(
+            room,
+            player_id,
+            str(payload.get("cardId") or ""),
+            payload.get("chosenColor"),
+            payload.get("targetPlayerId"),
+        )
 
     _with_player_action(data, action, sound_effect="play")
 
 
 @socketio.on("drawCard")
 def handle_draw_card(data: dict[str, Any] | None) -> None:
-    _with_player_action(data, lambda room, player_id, _: draw_card(room, player_id))
+    result: dict[str, Any] = {"auto_played": False, "room_code": None}
+
+    def action(room: dict[str, Any], player_id: str, _: dict[str, Any]) -> None:
+        previous_top = room["discard_pile"][-1]["id"]
+        draw_card(room, player_id)
+        result["room_code"] = room["code"]
+        result["auto_played"] = bool(
+            room.get("discard_pile") and room["discard_pile"][-1]["id"] != previous_top
+        )
+
+    _with_player_action(data, action)
+    if result["auto_played"] and result["room_code"]:
+        socketio.emit("soundEffect", {"type": "play"}, to=result["room_code"])
 
 
 @socketio.on("passTurn")
@@ -544,12 +624,90 @@ def handle_chat(data: dict[str, Any] | None) -> None:
         _error(exc)
 
 
+@socketio.on("voiceJoin")
+def handle_voice_join(data: dict[str, Any] | None) -> None:
+    try:
+        room, player = _manager().room_for_sid(
+            request.sid, (data or {}).get("roomCode")
+        )
+        if player.get("is_bot"):
+            raise GameRuleError("Computer players cannot join voice chat.")
+        room.setdefault("voice_members", {})[player["id"]] = {"speaking": False}
+        _broadcast_voice(room)
+    except Exception as exc:
+        _error(exc)
+
+
+@socketio.on("voiceLeave")
+def handle_voice_leave(data: dict[str, Any] | None) -> None:
+    try:
+        room, player = _manager().room_for_sid(
+            request.sid, (data or {}).get("roomCode")
+        )
+        _remove_voice_member(room, player["id"])
+    except Exception as exc:
+        _error(exc)
+
+
+@socketio.on("voiceSpeaking")
+def handle_voice_speaking(data: dict[str, Any] | None) -> None:
+    try:
+        payload = data or {}
+        room, player = _manager().room_for_sid(request.sid, payload.get("roomCode"))
+        member = room.setdefault("voice_members", {}).get(player["id"])
+        if member is None:
+            raise GameRuleError("Join voice chat before sending voice status.")
+        speaking = bool(payload.get("speaking"))
+        if member.get("speaking") != speaking:
+            member["speaking"] = speaking
+            _broadcast_voice(room)
+    except Exception as exc:
+        _error(exc)
+
+
+@socketio.on("voiceSignal")
+def handle_voice_signal(data: dict[str, Any] | None) -> None:
+    try:
+        payload = data or {}
+        room, player = _manager().room_for_sid(request.sid, payload.get("roomCode"))
+        if player["id"] not in room.setdefault("voice_members", {}):
+            raise GameRuleError("Join voice chat before connecting to another player.")
+        target_id = str(payload.get("targetPlayerId") or "")
+        target = next(
+            (
+                seat
+                for seat in room["players"]
+                if seat["id"] == target_id
+                and seat["connected"]
+                and seat.get("socket_id")
+                and target_id in room["voice_members"]
+            ),
+            None,
+        )
+        signal = payload.get("signal")
+        if not target or not isinstance(signal, dict):
+            raise GameRuleError("That voice participant is unavailable.")
+        if signal.get("type") not in {"offer", "answer", "candidate"}:
+            raise GameRuleError("Unsupported voice signal.")
+        if len(json.dumps(signal)) > 12_000:
+            raise GameRuleError("Voice signal is too large.")
+        socketio.emit(
+            "voiceSignal",
+            {"fromPlayerId": player["id"], "signal": signal},
+            to=target["socket_id"],
+        )
+    except Exception as exc:
+        _error(exc)
+
+
 @socketio.on("leaveRoom")
 def handle_leave_room(data: dict[str, Any] | None) -> None:
     try:
         requested = (data or {}).get("roomCode")
         room, _ = _manager().room_for_sid(request.sid, requested)
         code = room["code"]
+        _, leaving_player = _manager().room_for_sid(request.sid, requested)
+        _remove_voice_member(room, leaving_player["id"])
         socket_leave_room(code)
         remaining, removed_code = _manager().leave(request.sid)
         if remaining:
@@ -568,6 +726,11 @@ def handle_leave_room(data: dict[str, Any] | None) -> None:
 
 @socketio.on("disconnect")
 def handle_disconnect() -> None:
+    identity = _manager().sid_to_player.get(request.sid)
+    room_before = _manager().rooms.get(identity[0]) if identity else None
+    player_id = identity[1] if identity else None
+    if room_before and player_id:
+        _remove_voice_member(room_before, player_id)
     room = _manager().disconnect(request.sid)
     if room:
         _persist(room)

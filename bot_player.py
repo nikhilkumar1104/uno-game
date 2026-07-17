@@ -49,10 +49,31 @@ def choose_color(hand: list[dict[str, str]], rng: random.Random) -> str:
     return rng.choice([color for color, count in counts.items() if count == best_count])
 
 
-def choose_card(cards: list[dict[str, str]], rng: random.Random) -> dict[str, str]:
-    """Use visible hand information only and preserve flexible wilds when possible."""
+def choose_card(
+    cards: list[dict[str, str]],
+    rng: random.Random,
+    difficulty: str = "medium",
+    personality: str = "balanced",
+) -> dict[str, str]:
+    """Choose from legal cards using only information visible in the bot's hand."""
+    if difficulty == "easy":
+        return rng.choice(cards)
     weights = {"draw2": 38, "skip": 34, "reverse": 30, "wild": 15, "wild4": 18}
-    score = lambda card: weights.get(card["value"], int(card["value"]) if card["value"].isdigit() else 0)
+    if personality == "aggressive":
+        weights.update({"draw2": 58, "skip": 48, "reverse": 35, "wild4": 62})
+    elif personality == "defensive":
+        weights.update({"wild": 34, "wild4": 38, "skip": 42, "reverse": 40})
+    elif personality == "wild_saver":
+        weights.update({"wild": -15, "wild4": -20})
+    if difficulty == "hard":
+        weights["wild"] -= 12
+        weights["wild4"] -= 10
+
+    def score(card: dict[str, str]) -> int:
+        return weights.get(
+            card["value"], int(card["value"]) if card["value"].isdigit() else 0
+        )
+
     best_score = max(score(card) for card in cards)
     candidates = [
         card
@@ -60,6 +81,20 @@ def choose_card(cards: list[dict[str, str]], rng: random.Random) -> dict[str, st
         if score(card) == best_score
     ]
     return rng.choice(candidates)
+
+
+def _seven_target(room: dict[str, Any], player: dict[str, Any]) -> str | None:
+    candidates = [
+        seat
+        for seat in room["players"]
+        if not seat["spectator"]
+        and seat["id"] != player["id"]
+        and (
+            room.get("play_format") != "teams"
+            or seat.get("team") != player.get("team")
+        )
+    ]
+    return max(candidates, key=lambda seat: len(seat["hand"]))["id"] if candidates else None
 
 
 def perform_bot_turn(
@@ -78,8 +113,10 @@ def perform_bot_turn(
         )
         if not target or not target.get("is_bot"):
             return None
+        difficulty = target.get("bot_difficulty", "medium")
+        chance = {"easy": 0.18, "medium": 0.35, "hard": 0.5}.get(difficulty, 0.35)
         # The choice is intentionally independent of the hidden legality flag.
-        if rng.random() < 0.35:
+        if rng.random() < chance:
             challenge_wild4(room, target["id"])
             return {
                 "message": room.get("last_challenge_result") or "The computer resolved the challenge.",
@@ -91,9 +128,12 @@ def perform_bot_turn(
     player = current_player(room)
     if not player or not player.get("is_bot") or not player.get("connected"):
         return None
+    difficulty = player.get("bot_difficulty", "medium")
+    personality = player.get("bot_personality", "balanced")
 
     offender_id = room.get("uno_pending_player_id")
-    if offender_id and offender_id != player["id"] and rng.random() < 0.7:
+    catch_chance = {"easy": 0.25, "medium": 0.7, "hard": 0.95}.get(difficulty, 0.7)
+    if offender_id and offender_id != player["id"] and rng.random() < catch_chance:
         offender_name = catch_uno(room, player["id"])
         return {
             "message": f"{player['username']} caught {offender_name}. Two-card penalty!",
@@ -102,20 +142,41 @@ def perform_bot_turn(
 
     playable = legal_bot_cards(room, player)
     if playable:
-        card = choose_card(playable, rng)
+        card = choose_card(playable, rng, difficulty, personality)
         chosen_color = choose_color(
             [item for item in player["hand"] if item["id"] != card["id"]], rng
         ) if card["color"] == "wild" else None
-        play_card(room, player["id"], card["id"], chosen_color)
+        target_id = (
+            _seven_target(room, player)
+            if room.get("rules", {}).get("seven_zero") and card["value"] == "7"
+            else None
+        )
+        play_card(room, player["id"], card["id"], chosen_color, target_id)
         effects = ["play"]
         message = None
-        if room["status"] == "playing" and len(player["hand"]) == 1:
+        uno_chance = {"easy": 0.72, "medium": 0.95, "hard": 1.0}.get(difficulty, 0.95)
+        if room["status"] == "playing" and len(player["hand"]) == 1 and rng.random() < uno_chance:
             declare_uno(room, player["id"])
             effects.append("uno")
             message = f"{player['username']} called UNO!"
         return {"message": message, "effects": effects}
 
+    previous_top_id = room["discard_pile"][-1]["id"]
     draw_card(room, player["id"])
+    forced_played = (
+        room.get("status") in {"playing", "finished"}
+        and room.get("discard_pile")
+        and room["discard_pile"][-1]["id"] != previous_top_id
+    )
+    if forced_played:
+        effects = ["play"]
+        message = None
+        uno_chance = {"easy": 0.72, "medium": 0.95, "hard": 1.0}.get(difficulty, 0.95)
+        if room["status"] == "playing" and len(player["hand"]) == 1 and rng.random() < uno_chance:
+            declare_uno(room, player["id"])
+            effects.append("uno")
+            message = f"{player['username']} called UNO!"
+        return {"message": message, "effects": effects}
     if room["status"] != "playing" or room.get("drawn_by_id") != player["id"]:
         return {"message": None, "effects": []}
 
@@ -130,10 +191,16 @@ def perform_bot_turn(
     chosen_color = choose_color(
         [item for item in player["hand"] if item["id"] != drawn["id"]], rng
     ) if drawn["color"] == "wild" else None
-    play_card(room, player["id"], drawn["id"], chosen_color)
+    target_id = (
+        _seven_target(room, player)
+        if room.get("rules", {}).get("seven_zero") and drawn["value"] == "7"
+        else None
+    )
+    play_card(room, player["id"], drawn["id"], chosen_color, target_id)
     effects = ["play"]
     message = None
-    if room["status"] == "playing" and len(player["hand"]) == 1:
+    uno_chance = {"easy": 0.72, "medium": 0.95, "hard": 1.0}.get(difficulty, 0.95)
+    if room["status"] == "playing" and len(player["hand"]) == 1 and rng.random() < uno_chance:
         declare_uno(room, player["id"])
         effects.append("uno")
         message = f"{player['username']} called UNO!"

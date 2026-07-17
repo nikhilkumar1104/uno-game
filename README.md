@@ -11,7 +11,7 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Standard 108-card UNO deck and seven-card opening hands
 - Number, Skip, Reverse, Draw Two, Wild, and Wild Draw Four cards
 - Classic mode with official no-stacking play and Wild Draw Four challenges
-- Wild mode with accumulating +2/+4 stacks (`+2` on `+2`, `+4` on `+4`, and `+2` on `+4`)
+- Wild mode with same-type draw stacking only (`+2` on `+2`; `+4` on `+4`)
 - Draw-then-play or draw-then-pass flow
 - Two-player Reverse behavior, draw penalties, and skip behavior
 - Working UNO declaration and a live Catch UNO window with a two-card penalty
@@ -21,7 +21,14 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Player avatars, sound toggle, dark/light themes, responsive mobile UI
 - Distinct card, UNO, Catch UNO, and winner sounds with adjustable effects volume
 - Optional procedural background music with its own toggle and volume control
-- Server-controlled computer opponents for solo games or mixed human/computer tables
+- Easy, Medium, and Hard server-controlled computer opponents with Balanced, Aggressive, Defensive, and Wild Saver personalities
+- Installable PWA with a self-contained offline computer-practice table
+- Individual and alternating-seat 2v2 team formats with team scoring
+- Host rule builder for Seven-O, exact-card Jump-In, and Forced Play
+- Drag cards to the discard pile, swipe up on touchscreens, and use keyboard shortcuts
+- Color symbols, high-contrast mode, reduced motion, and an interactive five-step tutorial
+- Basic peer-to-peer WebRTC voice chat with mute, deafen, speaking, and connection-quality indicators
+- Quick emoji reactions and table-wide chat popups
 - Viewport-stable gameplay that preserves page and hand position after every live update
 - Locally bundled Socket.IO browser client with no runtime CDN dependency
 - Server-side input validation, message limits, duplicate-name prevention, and private hand projection
@@ -47,6 +54,12 @@ flask-uno-live/
 |-- static/
 |   |-- style.css
 |   |-- script.js
+|   |-- offline.html       # Self-contained offline practice screen
+|   |-- offline.css
+|   |-- offline.js
+|   |-- manifest.webmanifest
+|   |-- sw.js              # PWA cache and offline navigation
+|   |-- icons/             # Installable app icons
 |   |-- vendor/socket.io.min.js # Bundled Socket.IO 4 browser client
 |   `-- sounds/
 |       `-- README.md       # Web Audio implementation note
@@ -146,11 +159,14 @@ To test from phones or computers on the same Wi-Fi network, use the host compute
 8. In Wild mode, draw cards can be stacked using the combinations shown in the lobby. Drawing takes the complete accumulated penalty and ends the turn.
 9. The first player to empty their hand wins the round and receives the point value of every opponent card. Everyone is queued into the next round after 10 seconds unless they leave.
 
-Use the floating **Audio** control at any time to enable or disable effects, start background music, and adjust the two volume levels independently. Browsers require a user click before music can begin.
+Use the floating **Settings** control at any time to adjust effects/music and enable color symbols, high contrast, or reduced motion. Browsers require a user click before music can begin.
+
+Keyboard shortcuts during a round: Left/Right selects cards, Enter plays the focused card, `D` draws, `U` calls UNO, `C` catches UNO, `V` joins/leaves voice, and `M` mutes/unmutes.
 
 ## Computer Opponents
 
 - The room host can add or remove computers in the lobby, up to the six-player table limit.
+- Choose Easy, Medium, or Hard difficulty and a play personality before adding each computer.
 - One human plus one computer is enough to start a solo game.
 - Computer decisions run on the server and use the same validated play, draw, penalty, challenge, UNO, scoring, and rematch functions as human actions.
 - Computers choose from their own hand only. They do not inspect opponents' private cards or the hidden legality result when deciding whether to challenge a Wild Draw Four.
@@ -171,8 +187,34 @@ The host selects a mode in the lobby before the first deal.
 
 - `+2` can be played on `+2`.
 - `+4` can be played on `+4`.
-- `+2` can be played on `+4`.
+- `+2` cannot be played on `+4`, and `+4` cannot be played on `+2`.
 - Penalties accumulate until a player cannot or chooses not to stack, then that player draws the full total and loses the turn.
+
+### Custom room rules
+
+- **Seven-O:** a 7 swaps the remaining hand with a selected player; a 0 rotates every hand in the current direction.
+- **Jump-In:** a player may interrupt with a card whose color and value exactly match the top discard.
+- **Forced Play:** a playable card drawn from the pile is played immediately. The server selects the strongest remaining color when the forced card is Wild.
+
+### 2v2 teams
+
+Team mode requires exactly four active seats. Seats alternate Red, Blue, Red, Blue so partners sit across the turn order. When either partner empties their hand, the team receives points from the two opposing hands.
+
+## PWA And Offline Practice
+
+1. Open the deployed HTTPS site in Chrome, Edge, or another install-capable browser.
+2. Choose **Install app** when it appears, or use the browser's Install option.
+3. Open **Practice offline vs computer** once while online so the service worker can cache it.
+4. The practice table then runs locally without Flask, Socket.IO, or an internet connection.
+
+After deploying a new version, reload once online so the updated service worker can activate.
+
+## Voice Chat
+
+- Select **Talk > Join voice** on mobile, or **Join voice** in the desktop side panel.
+- Browser audio is sent directly between players with WebRTC; Render relays only connection-signaling messages.
+- Mute disables your microphone track. Deafen silences all remote tracks. Speaking rings and Good/Fair/Poor quality labels update live.
+- HTTPS and microphone permission are required. The included public STUN server is enough for typical networks. Very restrictive corporate/mobile NATs may require a TURN service later.
 
 ### Round points
 
@@ -187,7 +229,7 @@ The host selects a mode in the lobby before the first deal.
 pytest -q
 ```
 
-The tests cover the 108-card deck, Classic penalties, Wild stacking combinations, Wild Draw Four accept/challenge results, UNO and Catch UNO timing, scoring, private hands, reconnects, final-card persistence, two-browser rematches, computer decisions, scheduled computer turns, and the bundled Socket.IO client.
+The tests cover the 108-card deck, Classic penalties, same-type Wild stacking, Wild Draw Four challenges, UNO/Catch timing, Seven-O, Jump-In, Forced Play, team scoring, private hands, reconnects, final-card persistence, rematches, bot profiles, voice signaling, PWA assets, and the bundled Socket.IO client.
 
 ## Push To GitHub
 
@@ -216,6 +258,8 @@ Do not commit `.env`, `.venv`, SQLite database files, or Python cache files; `.g
 5. Open `https://YOUR-SERVICE.onrender.com/health` and confirm that `status` is `ok`.
 6. Set `ALLOWED_ORIGINS` to the final service origin, for example `https://uno-live-flask.onrender.com`, then redeploy.
 
+For this repository's current service, use `ALLOWED_ORIGINS=https://uno-live-game.onrender.com` with no trailing slash. Do not manually set `PORT`; Render supplies it.
+
 ### Manual method
 
 Use these service settings:
@@ -236,6 +280,8 @@ Add these environment variables:
 | `PYTHON_VERSION` | `3.12.4` |
 
 Render's free filesystem is ephemeral. The game remains fully playable, but SQLite history can reset during a redeploy or restart. For durable history, attach a persistent disk at `/var/data` and set `DATABASE_URL=sqlite:////var/data/uno.sqlite3`.
+
+Uptime monitoring can reduce free-tier cold starts, but it does not make SQLite persistent and does not improve WebRTC traversal.
 
 ## Deploy To Railway
 
@@ -263,7 +309,7 @@ For durable SQLite data, create a Railway volume, mount it at `/data`, and add `
 | Client event | Purpose |
 | --- | --- |
 | `createRoom` / `joinRoom` / `rejoinRoom` | Seat and room lifecycle |
-| `setGameMode` / `startGame` | Host mode selection and first-round lifecycle |
+| `setGameMode` / `setRoomOptions` / `startGame` | Host mode, format, custom rules, and first-round lifecycle |
 | `addBot` / `removeBot` | Host-managed computer seats in the lobby |
 | `playCard` / `drawCard` / `passTurn` | Turn actions validated by the server |
 | `declareUno` | One-card declaration |
@@ -271,6 +317,8 @@ For durable SQLite data, create a Railway volume, mount it at `/data`, and add `
 | `acceptWild4` / `challengeWild4` | Resolve Classic-mode Wild Draw Four |
 | `playAgain` | Queue one player; a round starts early when every connected player is ready |
 | `chatMessage` | Sanitized room chat |
+| `voiceJoin` / `voiceLeave` / `voiceSpeaking` | Voice membership and speaking state |
+| `voiceSignal` | Validated peer-to-peer WebRTC signaling relay |
 | `leaveRoom` | Explicit room exit |
 
-The server emits `lobbyState`, private `gameState`, `chatMessage`, `notification`, `soundEffect`, and `errorMessage` updates.
+The server emits `lobbyState`, private `gameState`, `chatMessage`, `notification`, `soundEffect`, `voiceParticipants`, `voiceSignal`, `voicePeerLeft`, and `errorMessage` updates.

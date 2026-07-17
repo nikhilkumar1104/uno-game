@@ -1,0 +1,74 @@
+:root {
+  color-scheme: dark;
+  --page: #0b0e12;
+  --surface: #151b22;
+  --line: #2b3540;
+  --text: #f7f8fa;
+  --muted: #9da8b5;
+  --red: #ea3348;
+  --yellow: #f5c842;
+  --green: #18a866;
+  --blue: #2879e9;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100dvh; color: var(--text); background: var(--page); font-family: Inter, system-ui, sans-serif; }
+button, select { color: inherit; font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .42; }
+.hidden { display: none !important; }
+.practice-shell { display: grid; width: min(1050px, 100%); min-height: 100dvh; grid-template-rows: auto minmax(300px, 1fr) auto auto; margin: auto; padding: 16px; }
+header, .practice-options, .hand-heading, .hand-heading > div, .opponent { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+header { min-height: 64px; }
+.brand { color: var(--text); font-size: 20px; font-weight: 950; text-decoration: none; }
+.brand span { display: inline-grid; min-width: 66px; min-height: 38px; place-items: center; border: 3px solid #fff; border-radius: 50%; color: #fff; background: var(--red); transform: rotate(-8deg); }
+.practice-options label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; font-weight: 800; }
+select, header button, .hand-heading button, .winner button { min-height: 42px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-weight: 800; }
+.practice-table { position: relative; display: grid; min-height: 440px; place-items: center; overflow: hidden; border: 9px solid #07392b; border-radius: 12px; background: #0d513c; }
+.practice-table h1 { position: absolute; top: 18px; margin: 0; padding: 7px 12px; border-radius: 999px; color: #fff; background: rgba(0,0,0,.28); font-size: 15px; }
+.opponent { position: absolute; top: 64px; padding: 7px 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 8px; color: #fff; background: rgba(0,0,0,.25); }
+.opponent div { display: grid; }
+.opponent small { opacity: .75; }
+.avatar { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 50%; background: var(--blue); font-size: 11px; font-weight: 900; }
+.piles { display: flex; gap: clamp(35px, 10vw, 100px); align-items: center; padding-top: 65px; }
+.card { position: relative; display: grid; width: 104px; height: 156px; place-items: center; border: 6px solid #fff; border-radius: 12px; color: #fff; box-shadow: 0 12px 25px rgba(0,0,0,.28); font-weight: 950; }
+button.card { padding: 0; }
+.card.red { background: var(--red); } .card.yellow { color: #221b00; background: var(--yellow); } .card.green { background: var(--green); } .card.blue { background: var(--blue); }
+.card.wild, .card.back { background: linear-gradient(135deg, #111 42%, var(--red) 42% 55%, var(--yellow) 55% 68%, var(--green) 68% 81%, var(--blue) 81%); }
+.card > strong { display: grid; width: 70%; height: 68%; place-items: center; border-radius: 50%; color: inherit; background: rgba(255,255,255,.88); color: #111; font-size: 25px; transform: rotate(-10deg); }
+.card > i { position: absolute; top: 5px; left: 7px; font-size: 13px; font-style: normal; }
+.card > i:last-child { top: auto; right: 7px; bottom: 5px; left: auto; transform: rotate(180deg); }
+.back span { color: #fff; font-size: 23px; font-style: italic; transform: rotate(-10deg); }
+.back small { position: absolute; right: 8px; bottom: 5px; }
+.hand-area { min-width: 0; padding-top: 10px; }
+.hand-heading { min-height: 62px; }
+.hand-heading > div:first-child { display: grid; justify-content: start; }
+.hand-heading small, .offline-note { color: var(--muted); }
+.hand { display: flex; min-height: 145px; gap: 9px; overflow-x: auto; padding: 7px 3px 15px; }
+.hand .card { flex: 0 0 82px; width: 82px; height: 123px; }
+.hand .card.playable { transform: translateY(-5px); border-color: var(--yellow); }
+.uno-button { color: #201800; background: var(--yellow) !important; }
+.offline-note { margin: 4px 0 0; font-size: 11px; text-align: center; }
+.winner { position: absolute; z-index: 4; display: grid; width: min(360px, calc(100% - 24px)); place-items: center; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 20px 50px rgba(0,0,0,.4); }
+.modal { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.7); }
+.modal > div { width: min(420px, 100%); padding: 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); text-align: center; }
+.modal section { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.modal button { min-height: 50px; border: 0; border-radius: 7px; color: #fff; font-weight: 900; }
+.modal [data-color=red] { background: var(--red); } .modal [data-color=yellow] { color: #201800; background: var(--yellow); } .modal [data-color=green] { background: var(--green); } .modal [data-color=blue] { background: var(--blue); }
+
+@media (max-width: 620px) {
+  .practice-shell { height: 100dvh; overflow: hidden; padding: 7px; grid-template-rows: auto minmax(220px, 1fr) auto; }
+  header { min-height: 48px; }
+  .brand { font-size: 0; } .brand span { min-width: 58px; min-height: 34px; font-size: 16px; }
+  .practice-options { gap: 5px; } header button, select { min-height: 36px; padding: 5px 8px; font-size: 11px; }
+  .practice-table { min-height: 0; border-width: 6px; }
+  .practice-table h1 { top: 7px; }
+  .opponent { top: 48px; }
+  .piles { padding-top: 70px; }
+  .card { width: 76px; height: 114px; border-width: 4px; }
+  .hand-heading { min-height: 53px; } .hand-heading button { min-height: 38px; padding: 5px 8px; font-size: 11px; }
+  .hand { min-height: 112px; height: 112px; padding-block: 4px; }
+  .hand .card { flex-basis: 66px; width: 66px; height: 99px; }
+  .hand .card > strong { font-size: 19px; }
+  .offline-note { display: none; }
+}
