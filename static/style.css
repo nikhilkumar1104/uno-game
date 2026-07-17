@@ -43,6 +43,7 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   color: var(--text);
   background: var(--page);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -92,7 +93,7 @@ h2 {
 .screen {
   width: min(1480px, 100%);
   margin: 0 auto;
-  padding: 24px 28px 32px;
+  padding: 24px max(28px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(28px, env(safe-area-inset-left));
 }
 
 .welcome-view {
@@ -428,6 +429,52 @@ button:disabled {
   margin: 28px 0;
 }
 
+.mode-section {
+  margin-top: 24px;
+  padding: 20px 0 4px;
+  border-top: 1px solid var(--line);
+}
+
+.mode-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mode-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 13px;
+}
+
+.mode-option {
+  display: grid;
+  min-height: 86px;
+  gap: 4px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  text-align: left;
+}
+
+.mode-option strong {
+  font-size: 15px;
+}
+
+.mode-option span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mode-option.selected {
+  border-color: var(--yellow);
+  box-shadow: inset 0 0 0 1px var(--yellow);
+}
+
 .lobby-player,
 .game-player,
 .opponent-chip {
@@ -751,6 +798,20 @@ button:disabled {
   transform: translateX(-50%);
 }
 
+.stack-banner {
+  position: absolute;
+  z-index: 4;
+  top: 130px;
+  left: 50%;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(110, 20, 32, 0.9);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+
 .turn-pill,
 .color-status {
   color: #fff;
@@ -931,11 +992,76 @@ button.uno-card.blocked {
 }
 
 .spectator-banner,
-.winner-panel {
+.winner-panel,
+.decision-panel {
   position: absolute;
   z-index: 5;
   left: 50%;
   transform: translateX(-50%);
+}
+
+.decision-panel {
+  top: 50%;
+  width: min(390px, calc(100% - 32px));
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.decision-panel h2 {
+  margin-bottom: 7px;
+}
+
+.decision-panel p:not(.kicker) {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.decision-actions,
+.winner-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.challenge-reveal {
+  z-index: 7;
+  width: min(500px, calc(100% - 32px));
+}
+
+.challenge-reveal-cards {
+  display: flex;
+  gap: 7px;
+  margin: 14px 0;
+  overflow-x: auto;
+  padding: 8px 3px 14px;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+
+.challenge-reveal-cards .uno-card {
+  flex: 0 0 62px;
+  width: 62px;
+  height: 93px;
+  border-width: 3px;
+  scroll-snap-align: start;
+}
+
+.challenge-reveal-cards .uno-card-value {
+  font-size: 18px;
+}
+
+.challenge-reveal-cards .uno-card-corner {
+  font-size: 9px;
+}
+
+.challenge-reveal > button {
+  width: 100%;
 }
 
 .spectator-banner {
@@ -952,7 +1078,7 @@ button.uno-card.blocked {
 
 .winner-panel {
   top: 50%;
-  width: min(390px, calc(100% - 32px));
+  width: min(520px, calc(100% - 32px));
   padding: 24px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -973,6 +1099,30 @@ button.uno-card.blocked {
   font-size: 13px;
 }
 
+.round-standings {
+  display: grid;
+  gap: 5px;
+  max-height: 148px;
+  margin: 14px 0;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.round-standing-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.round-standing-row strong {
+  color: var(--text);
+}
+
 .hand-toolbar {
   min-height: 76px;
   padding: 14px 2px 8px;
@@ -986,12 +1136,16 @@ button.uno-card.blocked {
   overflow-x: auto;
   padding: 14px 4px 25px;
   scrollbar-color: var(--surface-3) transparent;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .player-hand .uno-card {
   flex: 0 0 92px;
   width: 92px;
   height: 138px;
+  scroll-snap-align: start;
 }
 
 .uno-button {
@@ -1001,6 +1155,17 @@ button.uno-card.blocked {
   color: #241b00;
   background: var(--yellow);
   font-weight: 950;
+}
+
+.catch-button {
+  min-height: 44px;
+  padding: 10px 15px;
+  border: 1px solid #ff7584;
+  border-radius: 6px;
+  color: #fff;
+  background: #a82032;
+  font-weight: 900;
+  animation: uno-pulse 650ms ease-in-out infinite alternate;
 }
 
 .uno-button.attention {
@@ -1145,7 +1310,11 @@ button.uno-card.blocked {
 
 @media (max-width: 650px) {
   .screen {
-    padding: 16px;
+    padding: 12px max(12px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+
+  .welcome-view {
+    min-height: 100dvh;
   }
 
   .welcome-nav,
@@ -1162,6 +1331,30 @@ button.uno-card.blocked {
     border-bottom: 1px solid var(--line);
   }
 
+  .room-header,
+  .game-header {
+    min-height: auto;
+    margin-bottom: 12px;
+  }
+
+  .game-header h1 {
+    font-size: clamp(18px, 5.6vw, 23px);
+    line-height: 1.2;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .header-actions button,
+  .turn-actions button,
+  .winner-actions button,
+  .decision-actions button {
+    min-height: 48px;
+  }
+
   .game-room-meta {
     width: 100%;
   }
@@ -1175,7 +1368,7 @@ button.uno-card.blocked {
   }
 
   .welcome-copy h1 {
-    font-size: 43px;
+    font-size: clamp(38px, 12vw, 50px);
   }
 
   .welcome-lead {
@@ -1183,11 +1376,23 @@ button.uno-card.blocked {
   }
 
   .entry-panel {
-    padding: 20px;
+    padding: 18px;
+  }
+
+  .join-row {
+    grid-template-columns: 1fr;
+  }
+
+  .join-row button {
+    min-height: 48px;
   }
 
   .lobby-player-grid {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .mode-picker {
+    grid-template-columns: 1fr;
   }
 
   .lobby-footer,
@@ -1207,8 +1412,14 @@ button.uno-card.blocked {
   }
 
   .table-surface {
-    min-height: 410px;
+    min-height: 390px;
     border-width: 7px;
+  }
+
+  .players-sidebar,
+  .activity-panel,
+  .chat-panel {
+    padding: 14px;
   }
 
   .opponent-rail {
@@ -1216,14 +1427,14 @@ button.uno-card.blocked {
   }
 
   .table-status {
-    top: 83px;
+    top: 78px;
     width: max-content;
     max-width: calc(100% - 22px);
   }
 
   .pile-row {
-    gap: 34px;
-    padding-top: 42px;
+    gap: clamp(26px, 10vw, 42px);
+    padding-top: 46px;
   }
 
   .draw-pile,
@@ -1244,12 +1455,105 @@ button.uno-card.blocked {
   }
 
   .turn-actions {
+    width: 100%;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .turn-actions #passTurnBtn {
+    grid-column: 1 / -1;
+  }
+
+  .turn-actions #catchUnoBtn,
+  .turn-actions #unoBtn {
+    width: 100%;
+  }
+
+  .winner-panel,
+  .decision-panel {
+    width: calc(100% - 18px);
+    max-height: calc(100% - 18px);
+    padding: 18px;
+    overflow-y: auto;
+  }
+
+  .winner-panel h2 {
+    font-size: 23px;
+  }
+
+  .round-standings {
+    max-height: 120px;
+    margin: 10px 0;
+  }
+
+  .stack-banner {
+    top: 121px;
+    max-width: calc(100% - 20px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+
+  .decision-actions,
+  .winner-actions {
+    grid-template-columns: 1fr;
   }
 
   .game-chat {
-    height: 300px;
+    min-height: 280px;
+    height: min(300px, 60dvh);
+  }
+
+  .toast {
+    bottom: max(14px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 380px) {
+  .brand-uno {
+    min-width: 58px;
+    min-height: 34px;
+  }
+
+  .nav-actions {
+    gap: 6px;
+  }
+
+  .nav-actions .quiet-button {
+    padding-inline: 10px;
+  }
+
+  .lobby-player-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .table-surface {
+    min-height: 365px;
+  }
+
+  .draw-pile,
+  .uno-card,
+  .discard-pile {
+    width: 76px;
+    height: 114px;
+  }
+
+  .player-hand .uno-card {
+    flex-basis: 72px;
+    width: 72px;
+    height: 108px;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  button.uno-card.playable:hover,
+  button.uno-card.playable {
+    transform: translateY(-5px);
+  }
+
+  .draw-pile:not(:disabled):hover {
+    transform: none;
   }
 }
 

@@ -12,15 +12,22 @@ from flask_socketio import SocketIO, emit, join_room as socket_join_room, leave_
 
 from game_engine import (
     GameRuleError,
+    accept_wild4,
+    catch_uno,
+    challenge_wild4,
     declare_uno,
     draw_card,
     lobby_state,
     pass_turn,
     play_card,
     public_state,
+    queue_rematch,
+    rematch_all_ready,
+    return_to_lobby,
+    set_game_mode,
     start_game,
 )
-from models import db, delete_room, load_rooms, record_match, save_room
+from models import db, delete_room, ensure_schema, load_rooms, record_match, save_room
 from rooms import RoomManager
 
 
@@ -68,6 +75,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app.extensions["room_manager"] = manager
     with app.app_context():
         db.create_all()
+        ensure_schema()
         manager.restore(load_rooms())
 
     @app.get("/")
@@ -107,9 +115,16 @@ def _error(exc: Exception) -> None:
     emit("errorMessage", {"message": message})
 
 
-def _persist(room: dict[str, Any] | None) -> None:
-    if room:
+def _persist(room: dict[str, Any] | None) -> bool:
+    if not room:
+        return False
+    try:
         save_room(room)
+        return True
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Room snapshot persistence failed")
+        return False
 
 
 def _send_state(room: dict[str, Any], sid: str | None = None) -> None:
@@ -134,20 +149,84 @@ def _send_state(room: dict[str, Any], sid: str | None = None) -> None:
 
 def _with_player_action(
     data: dict[str, Any] | None,
-    action: Callable[[dict[str, Any], str, dict[str, Any]], None],
+    action: Callable[[dict[str, Any], str, dict[str, Any]], str | None],
 ) -> None:
+    room: dict[str, Any] | None = None
+    finished_transition = False
+    notification: str | None = None
     try:
         payload = data or {}
-        room, player = _manager().room_for_sid(request.sid, payload.get("roomCode"))
-        was_playing = room["status"] == "playing"
-        action(room, player["id"], payload)
-        if was_playing and room["status"] == "finished":
-            record_match(room)
-        _persist(room)
-        _send_state(room)
+        manager = _manager()
+        with manager.lock:
+            room, player = manager.room_for_sid(request.sid, payload.get("roomCode"))
+            was_playing = room["status"] == "playing"
+            try:
+                notification = action(room, player["id"], payload)
+            except GameRuleError:
+                if room["status"] == "finished":
+                    _send_state(room, request.sid)
+                    return
+                raise
+            finished_transition = was_playing and room["status"] == "finished"
+            if finished_transition:
+                try:
+                    record_match(room)
+                except Exception:
+                    db.session.rollback()
+                    current_app.logger.exception("Match history persistence failed")
+            _persist(room)
+            _send_state(room)
+        if notification:
+            socketio.emit("notification", {"message": notification}, to=room["code"])
+        if finished_transition:
+            socketio.emit(
+                "notification",
+                {"message": f"{room['winner']['username']} won {room['winner']['points']} points!"},
+                to=room["code"],
+            )
+            _schedule_rematch(room)
     except Exception as exc:  # Event boundaries must never leak stack traces to clients.
         current_app.logger.exception("Socket action failed") if not isinstance(exc, GameRuleError) else None
         _error(exc)
+
+
+def _schedule_rematch(room: dict[str, Any]) -> None:
+    if current_app.config.get("TESTING"):
+        return
+    app_object = current_app._get_current_object()
+    socketio.start_background_task(
+        _rematch_timeout,
+        app_object,
+        room["code"],
+        room["game_id"],
+    )
+
+
+def _rematch_timeout(app_object: Flask, room_code: str, game_id: str) -> None:
+    socketio.sleep(10.2)
+    with app_object.app_context():
+        manager = _manager()
+        with manager.lock:
+            room = manager.rooms.get(room_code)
+            if not room or room["status"] != "finished" or room.get("game_id") != game_id:
+                return
+            for player in room["players"]:
+                if not player["spectator"] and player["connected"] and not player.get("left"):
+                    room.setdefault("rematch_choices", {})[player["id"]] = "ready"
+            connected = [
+                player
+                for player in room["players"]
+                if not player["spectator"] and player["connected"] and not player.get("left")
+            ]
+            if len(connected) >= 2:
+                start_game(room)
+                message = "The next round started automatically."
+            else:
+                return_to_lobby(room)
+                message = "Waiting in the lobby for another player."
+            _persist(room)
+            _send_state(room)
+        socketio.emit("notification", {"message": message}, to=room_code)
 
 
 @socketio.on("createRoom")
@@ -240,6 +319,18 @@ def handle_start_game(data: dict[str, Any] | None) -> None:
     _with_player_action(data, action)
 
 
+@socketio.on("setGameMode")
+def handle_set_game_mode(data: dict[str, Any] | None) -> None:
+    def action(room: dict[str, Any], player_id: str, payload: dict[str, Any]) -> str:
+        if room["host_id"] != player_id:
+            raise GameRuleError("Only the host can choose the game mode.")
+        set_game_mode(room, str(payload.get("mode") or ""))
+        label = "Classic" if room["mode"] == "classic" else "Wild stacking"
+        return f"The host selected {label} mode."
+
+    _with_player_action(data, action)
+
+
 @socketio.on("playCard")
 def handle_play_card(data: dict[str, Any] | None) -> None:
     def action(room: dict[str, Any], player_id: str, payload: dict[str, Any]) -> None:
@@ -260,17 +351,75 @@ def handle_pass_turn(data: dict[str, Any] | None) -> None:
 
 @socketio.on("declareUno")
 def handle_declare_uno(data: dict[str, Any] | None) -> None:
-    _with_player_action(data, lambda room, player_id, _: declare_uno(room, player_id))
+    def action(room: dict[str, Any], player_id: str, _: dict[str, Any]) -> str | None:
+        player = next(player for player in room["players"] if player["id"] == player_id)
+        return f"{player['username']} called UNO!" if declare_uno(room, player_id) else None
+
+    _with_player_action(data, action)
+
+
+@socketio.on("catchUno")
+def handle_catch_uno(data: dict[str, Any] | None) -> None:
+    def action(room: dict[str, Any], player_id: str, _: dict[str, Any]) -> str:
+        catcher = next(player for player in room["players"] if player["id"] == player_id)
+        offender_name = catch_uno(room, player_id)
+        return f"{catcher['username']} caught {offender_name}. Two-card penalty!"
+
+    _with_player_action(data, action)
+
+
+@socketio.on("acceptWild4")
+def handle_accept_wild4(data: dict[str, Any] | None) -> None:
+    _with_player_action(
+        data,
+        lambda room, player_id, _: (
+            accept_wild4(room, player_id) or "Wild Draw Four accepted."
+        ),
+    )
+
+
+@socketio.on("challengeWild4")
+def handle_challenge_wild4(data: dict[str, Any] | None) -> None:
+    reveal: dict[str, Any] = {}
+
+    def action(room: dict[str, Any], player_id: str, _: dict[str, Any]) -> str:
+        pending = room.get("wild4_challenge") or {}
+        offender = next(
+            (
+                player
+                for player in room["players"]
+                if player["id"] == pending.get("offender_id")
+            ),
+            None,
+        )
+        revealed_hand = (
+            [{"color": card["color"], "value": card["value"]} for card in offender["hand"]]
+            if offender
+            else []
+        )
+        challenge_wild4(room, player_id)
+        result = str(room.get("last_challenge_result") or "Challenge resolved.")
+        reveal.update(
+            offenderName=offender["username"] if offender else "Player",
+            hand=revealed_hand,
+            result=result,
+        )
+        return result
+
+    _with_player_action(data, action)
+    if reveal:
+        emit("challengeReveal", reveal)
 
 
 @socketio.on("playAgain")
 def handle_play_again(data: dict[str, Any] | None) -> None:
-    def action(room: dict[str, Any], player_id: str, _: dict[str, Any]) -> None:
-        if room["host_id"] != player_id:
-            raise GameRuleError("Only the host can start the next match.")
-        if room["status"] != "finished":
-            raise GameRuleError("The current match has not finished.")
-        start_game(room)
+    def action(room: dict[str, Any], player_id: str, _: dict[str, Any]) -> str:
+        queue_rematch(room, player_id)
+        player = next(player for player in room["players"] if player["id"] == player_id)
+        if rematch_all_ready(room):
+            start_game(room)
+            return "Everyone is ready. The next round has started!"
+        return f"{player['username']} is ready for the next round."
 
     _with_player_action(data, action)
 
@@ -296,6 +445,8 @@ def handle_leave_room(data: dict[str, Any] | None) -> None:
         socket_leave_room(code)
         remaining, removed_code = _manager().leave(request.sid)
         if remaining:
+            if remaining["status"] == "finished" and rematch_all_ready(remaining):
+                start_game(remaining)
             _persist(remaining)
             _send_state(remaining)
         elif removed_code:

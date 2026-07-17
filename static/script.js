@@ -21,6 +21,9 @@ const state = {
   messageIds: new Set(),
   soundEnabled: localStorage.getItem("uno.sound") !== "off",
   busy: false,
+  actionPending: false,
+  countdownTimer: null,
+  previousWinnerId: null,
 };
 
 const invitedRoomCode = document.body.dataset.initialRoom || "";
@@ -165,6 +168,8 @@ function renderLobbyPlayer(player) {
 }
 
 function renderLobby(room) {
+  state.actionPending = false;
+  window.clearInterval(state.countdownTimer);
   state.roomCode = room.code;
   state.isHost = room.hostId === state.playerId;
   persistSession();
@@ -176,6 +181,14 @@ function renderLobby(room) {
   const connected = active.filter((player) => player.connected);
   byId("lobbyPlayerCount").textContent = String(active.length);
   byId("lobbyCapacity").textContent = `${active.length} / 6`;
+
+  document.querySelectorAll(".mode-option").forEach((button) => {
+    button.classList.toggle("selected", button.dataset.mode === room.mode);
+    button.disabled = !state.isHost;
+  });
+  byId("modeLockHint").textContent = state.isHost
+    ? "Choose before starting"
+    : `${room.mode === "wild" ? "Wild stacking" : "Classic"} selected by host`;
 
   const list = byId("lobbyPlayers");
   list.replaceChildren(...room.players.map(renderLobbyPlayer));
@@ -277,9 +290,9 @@ function renderLeaderboard(rows) {
       rank.textContent = String(index + 1);
       const name = document.createElement("span");
       name.textContent = row.username;
-      const wins = document.createElement("strong");
-      wins.textContent = `${row.wins}W`;
-      line.append(rank, name, wins);
+      const score = document.createElement("strong");
+      score.textContent = `${row.points || 0} pts · ${row.wins}W`;
+      line.append(rank, name, score);
       return line;
     }),
   );
@@ -295,7 +308,7 @@ function renderMatchHistory(rows) {
     ...rows.map((row) => {
       const line = document.createElement("div");
       line.className = "history-row";
-      line.textContent = `${row.winner} won in ${row.moves} moves`;
+      line.textContent = `${row.winner} earned ${row.points || 0} points in ${row.moves} moves`;
       return line;
     }),
   );
@@ -325,7 +338,36 @@ function emptyState(text) {
   return element;
 }
 
+function renderRoundStandings(rows) {
+  byId("roundStandings").replaceChildren(
+    ...rows.map((row, index) => {
+      const line = document.createElement("div");
+      line.className = "round-standing-row";
+      const rank = document.createElement("span");
+      rank.textContent = String(index + 1);
+      const name = document.createElement("strong");
+      name.textContent = row.username;
+      const score = document.createElement("span");
+      score.textContent = `${row.points || 0} pts`;
+      line.append(rank, name, score);
+      return line;
+    }),
+  );
+}
+
+function startRematchCountdown(deadline) {
+  window.clearInterval(state.countdownTimer);
+  const update = () => {
+    const seconds = Math.max(0, Math.ceil((Number(deadline || 0) * 1000 - Date.now()) / 1000));
+    byId("rematchCountdown").textContent = String(seconds);
+    if (seconds === 0) window.clearInterval(state.countdownTimer);
+  };
+  update();
+  state.countdownTimer = window.setInterval(update, 250);
+}
+
 function renderGame(game) {
+  state.actionPending = false;
   state.game = game;
   state.roomCode = game.code;
   state.isHost = game.hostId === state.playerId;
@@ -336,6 +378,7 @@ function renderGame(game) {
   const current = game.players.find((player) => player.id === game.currentPlayerId);
   const myTurn = game.status === "playing" && game.currentPlayerId === state.playerId && !me?.spectator;
   const winner = game.winner;
+  const challenge = game.wild4Challenge;
 
   if (state.previousTurnId !== game.currentPlayerId && myTurn) {
     toast("Your turn.");
@@ -344,14 +387,28 @@ function renderGame(game) {
   state.previousTurnId = game.currentPlayerId;
 
   byId("gameRoomCode").textContent = game.code;
+  byId("gameModeLabel").textContent = game.mode === "wild" ? "Wild stacking" : "Classic";
   byId("turnStatus").textContent = winner
     ? `${winner.username} wins`
+    : challenge?.canRespond
+      ? "Choose whether to challenge +4"
+      : myTurn && game.pendingDraw
+        ? `Stack a draw card or take ${game.pendingDraw}`
     : myTurn
       ? "Your turn"
       : `${current?.username || "The table"} is playing`;
-  byId("turnPill").textContent = winner ? "Finished" : myTurn ? "Play a card" : "Waiting";
+  byId("turnPill").textContent = winner
+    ? "Finished"
+    : challenge
+      ? "Challenge window"
+      : myTurn
+        ? game.pendingDraw ? `Draw ${game.pendingDraw} or stack` : "Play a card"
+        : "Waiting";
   byId("directionLabel").textContent = game.direction === 1 ? "Clockwise" : "Counterclockwise";
-  byId("drawPileCount").textContent = String(game.drawPileCount);
+  byId("drawPileCount").textContent = game.pendingDraw ? `+${game.pendingDraw}` : String(game.drawPileCount);
+  byId("drawPile").title = game.pendingDraw
+    ? `Draw the ${game.pendingDraw}-card penalty (${game.drawPileCount} cards remain)`
+    : `Draw one card (${game.drawPileCount} cards remain)`;
   byId("handCount").textContent = String(game.hand.length);
   document.title = myTurn ? "Your turn | UNO Live" : `Room ${game.code} | UNO Live`;
 
@@ -377,26 +434,79 @@ function renderGame(game) {
     ...game.hand.map((card) => makeUnoCard(card, playable.has(card.id), true)),
   );
 
-  byId("drawPile").disabled = !myTurn || game.canPass || Boolean(winner);
-  byId("passTurnBtn").disabled = !myTurn || !game.canPass || Boolean(winner);
+  const stackBanner = byId("stackBanner");
+  stackBanner.classList.toggle("hidden", !game.pendingDraw);
+  byId("stackTotal").textContent = String(game.pendingDraw || 0);
+
+  const challengePanel = byId("wild4Panel");
+  challengePanel.classList.toggle("hidden", !challenge || Boolean(winner));
+  if (challenge) {
+    byId("wild4Offender").textContent = challenge.offenderName;
+    byId("wild4DecisionCopy").textContent = challenge.canRespond
+      ? `They claimed to have no ${challenge.previousColor} card. Accept 4 or challenge.`
+      : "The next player is deciding whether to challenge.";
+    byId("acceptWild4Btn").disabled = !challenge.canRespond;
+    byId("challengeWild4Btn").disabled = !challenge.canRespond;
+  }
+
+  byId("drawPile").disabled = !myTurn || game.canPass || Boolean(winner) || Boolean(challenge);
+  byId("passTurnBtn").disabled = !myTurn || !game.canPass || Boolean(winner) || Boolean(challenge);
   byId("unoBtn").disabled = !me || me.spectator || game.hand.length !== 1 || me.saidUno || Boolean(winner);
   byId("unoBtn").classList.toggle("attention", Boolean(game.mustDeclareUno));
+  const catchButton = byId("catchUnoBtn");
+  catchButton.classList.toggle("hidden", !game.catchableUnoPlayer || Boolean(winner));
+  catchButton.textContent = game.catchableUnoPlayer
+    ? `Catch ${game.catchableUnoPlayer.username}`
+    : "Catch UNO";
   byId("spectatorNotice").classList.toggle("hidden", !me?.spectator);
 
   const winnerPanel = byId("winnerPanel");
   winnerPanel.classList.toggle("hidden", !winner);
   if (winner) {
     byId("winnerText").textContent = `${winner.username} takes the round`;
-    byId("winnerSubtext").textContent = state.isHost
-      ? "Deal another hand when everyone is ready."
-      : "Waiting for the host to deal another hand.";
-    byId("playAgainBtn").disabled = !state.isHost;
+    byId("winnerPoints").textContent = `${winner.points} points earned · ${winner.totalPoints} total`;
+    const countdown = document.createElement("strong");
+    countdown.id = "rematchCountdown";
+    countdown.textContent = "10";
+    const winnerSubtext = byId("winnerSubtext");
+    if (game.matchChampion) {
+      winnerSubtext.replaceChildren(
+        document.createTextNode(`${game.matchChampion.username} reached ${game.scoreTarget} points. Next round starts in `),
+        countdown,
+        document.createTextNode("s."),
+      );
+    } else {
+      winnerSubtext.replaceChildren(
+        document.createTextNode("Next round begins in "),
+        countdown,
+        document.createTextNode("s. Pending players are queued automatically."),
+      );
+    }
+    renderRoundStandings(game.leaderboard || []);
+    byId("playAgainBtn").disabled = game.rematchChoice === "ready";
+    byId("playAgainBtn").textContent = game.rematchChoice === "ready" ? "Queued" : "Play again";
+    startRematchCountdown(game.rematchDeadline);
+    if (state.previousWinnerId !== winner.id) playSound("win");
+    state.previousWinnerId = winner.id;
+  } else {
+    window.clearInterval(state.countdownTimer);
+    state.previousWinnerId = null;
   }
 
   renderLeaderboard(game.leaderboard || []);
   renderMatchHistory(game.matchHistory || []);
   renderEvents(game.events || []);
   renderChat(game.chat || []);
+}
+
+function showChallengeReveal(payload) {
+  const panel = byId("challengeRevealPanel");
+  byId("challengeRevealName").textContent = payload.offenderName || "Player";
+  byId("challengeRevealResult").textContent = payload.result || "Challenge resolved.";
+  byId("challengeRevealCards").replaceChildren(
+    ...(payload.hand || []).map((card) => makeUnoCard(card)),
+  );
+  panel.classList.remove("hidden");
 }
 
 function makeChatMessage(message) {
@@ -439,16 +549,22 @@ function appendChat(message) {
   });
 }
 
-function send(event, payload = {}) {
+function send(event, payload = {}, lockAction = false) {
   if (!state.socket?.connected) {
     toast("The server is reconnecting. Try again in a moment.", true);
     return;
   }
+  if (lockAction && state.actionPending) return;
+  if (lockAction) state.actionPending = true;
   state.socket.emit(event, { roomCode: state.roomCode, ...payload });
 }
 
 function submitJoin(createRoom) {
   if (state.busy) return;
+  if (!state.socket?.connected) {
+    toast("The real-time server is still connecting. Refresh and try again.", true);
+    return;
+  }
   const username = cleanDisplayName(byId("usernameInput").value);
   const avatar = byId("avatarInput").value;
   if (username.length < 2) {
@@ -524,6 +640,7 @@ function initializeSocket() {
     }
   });
   state.socket.on("disconnect", () => {
+    state.actionPending = false;
     if (state.roomCode) byId("connectionBanner").classList.remove("hidden");
   });
   state.socket.on("roomJoined", (payload) => {
@@ -539,7 +656,9 @@ function initializeSocket() {
   state.socket.on("gameState", renderGame);
   state.socket.on("chatMessage", appendChat);
   state.socket.on("notification", ({ message }) => toast(message));
+  state.socket.on("challengeReveal", showChallengeReveal);
   state.socket.on("errorMessage", ({ message }) => {
+    state.actionPending = false;
     setBusy(false);
     toast(message, true);
   });
@@ -569,13 +688,24 @@ byId("joinForm").addEventListener("submit", (event) => {
 });
 byId("copyCodeBtn").addEventListener("click", copyCode);
 byId("copyGameCodeBtn").addEventListener("click", copyCode);
-byId("startGameBtn").addEventListener("click", () => send("startGame"));
+byId("startGameBtn").addEventListener("click", () => send("startGame", {}, true));
 byId("leaveLobbyBtn").addEventListener("click", leaveRoom);
 byId("leaveGameBtn").addEventListener("click", leaveRoom);
-byId("drawPile").addEventListener("click", () => send("drawCard"));
-byId("passTurnBtn").addEventListener("click", () => send("passTurn"));
-byId("unoBtn").addEventListener("click", () => send("declareUno"));
-byId("playAgainBtn").addEventListener("click", () => send("playAgain"));
+byId("drawPile").addEventListener("click", () => send("drawCard", {}, true));
+byId("passTurnBtn").addEventListener("click", () => send("passTurn", {}, true));
+byId("unoBtn").addEventListener("click", () => send("declareUno", {}, true));
+byId("catchUnoBtn").addEventListener("click", () => send("catchUno", {}, true));
+byId("acceptWild4Btn").addEventListener("click", () => send("acceptWild4", {}, true));
+byId("challengeWild4Btn").addEventListener("click", () => send("challengeWild4", {}, true));
+byId("closeChallengeRevealBtn").addEventListener("click", () => {
+  byId("challengeRevealPanel").classList.add("hidden");
+});
+byId("playAgainBtn").addEventListener("click", () => send("playAgain", {}, true));
+byId("winnerLeaveBtn").addEventListener("click", leaveRoom);
+
+document.querySelectorAll(".mode-option").forEach((button) => {
+  button.addEventListener("click", () => send("setGameMode", { mode: button.dataset.mode }, true));
+});
 
 byId("playerHand").addEventListener("click", (event) => {
   const button = event.target.closest("button.uno-card.playable");
@@ -587,14 +717,14 @@ byId("playerHand").addEventListener("click", (event) => {
     byId("colorModal").classList.remove("hidden");
     return;
   }
-  send("playCard", { cardId: card.id });
+  send("playCard", { cardId: card.id }, true);
   playSound("play");
 });
 
 byId("colorModal").addEventListener("click", (event) => {
   const choice = event.target.closest("button[data-color]");
   if (!choice || !state.selectedWildCardId) return;
-  send("playCard", { cardId: state.selectedWildCardId, chosenColor: choice.dataset.color });
+  send("playCard", { cardId: state.selectedWildCardId, chosenColor: choice.dataset.color }, true);
   state.selectedWildCardId = null;
   byId("colorModal").classList.add("hidden");
   playSound("play");
@@ -609,6 +739,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     state.selectedWildCardId = null;
     byId("colorModal").classList.add("hidden");
+    byId("challengeRevealPanel").classList.add("hidden");
   }
 });
 

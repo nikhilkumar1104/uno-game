@@ -47,10 +47,30 @@ class RoomManager:
     def restore(self, snapshots: list[dict[str, Any]]) -> None:
         with self.lock:
             for room in snapshots:
+                self._normalize_room(room)
                 for player in room.get("players", []):
                     player["connected"] = False
                     player["socket_id"] = None
                 self.rooms[room["code"]] = room
+
+    @staticmethod
+    def _normalize_room(room: dict[str, Any]) -> None:
+        defaults = {
+            "mode": "classic",
+            "round_number": 0,
+            "pending_draw": 0,
+            "pending_draw_type": None,
+            "wild4_challenge": None,
+            "last_challenge_result": None,
+            "match_champion": None,
+            "rematch_choices": {},
+            "rematch_deadline": None,
+        }
+        for key, value in defaults.items():
+            room.setdefault(key, value)
+        for row in room.get("leaderboard", {}).values():
+            row.setdefault("points", 0)
+            row.setdefault("wins", 0)
 
     def _new_code(self) -> str:
         while True:
@@ -93,6 +113,8 @@ class RoomManager:
                 "chat": [],
                 "leaderboard": {},
                 "match_history": [],
+                "mode": "classic",
+                "round_number": 0,
                 "game_id": None,
                 "draw_pile": [],
                 "discard_pile": [],
@@ -105,6 +127,13 @@ class RoomManager:
                 "uno_pending_player_id": None,
                 "drawn_card_id": None,
                 "drawn_by_id": None,
+                "pending_draw": 0,
+                "pending_draw_type": None,
+                "wild4_challenge": None,
+                "last_challenge_result": None,
+                "match_champion": None,
+                "rematch_choices": {},
+                "rematch_deadline": None,
                 "created_at": now,
                 "updated_at": now,
             }

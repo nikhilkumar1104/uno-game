@@ -5,7 +5,7 @@
         <span class="brand-uno">UNO</span><span>LIVE</span>
       </a>
       <div>
-        <p class="kicker">Room <span id="gameRoomCode"></span></p>
+        <p class="kicker">Room <span id="gameRoomCode"></span> · <span id="gameModeLabel">Classic</span></p>
         <h1 id="turnStatus">Waiting for the table</h1>
       </div>
     </div>
@@ -42,6 +42,7 @@
           <span id="turnPill" class="turn-pill">Waiting</span>
           <span id="colorStatus" class="color-status"><i></i><span>No color</span></span>
         </div>
+        <div id="stackBanner" class="stack-banner hidden">Draw stack: <strong id="stackTotal">0</strong></div>
         <div class="pile-row">
           <button id="drawPile" class="draw-pile" type="button" title="Draw one card">
             <span class="card-back-logo">UNO</span>
@@ -52,12 +53,33 @@
             <span>Discard</span>
           </div>
         </div>
+        <div id="wild4Panel" class="decision-panel hidden">
+          <p class="kicker">Wild Draw Four</p>
+          <h2><span id="wild4Offender">Player</span> played +4</h2>
+          <p id="wild4DecisionCopy">Accept 4 cards or challenge the previous color.</p>
+          <div class="decision-actions">
+            <button id="acceptWild4Btn" class="secondary-button" type="button">Draw 4</button>
+            <button id="challengeWild4Btn" class="primary-button" type="button">Challenge</button>
+          </div>
+        </div>
+        <div id="challengeRevealPanel" class="decision-panel challenge-reveal hidden" role="dialog" aria-live="polite">
+          <p class="kicker">Challenge reveal</p>
+          <h2><span id="challengeRevealName">Player</span>'s hand</h2>
+          <p id="challengeRevealResult"></p>
+          <div id="challengeRevealCards" class="challenge-reveal-cards" aria-label="Revealed cards"></div>
+          <button id="closeChallengeRevealBtn" class="secondary-button" type="button">Continue</button>
+        </div>
         <div id="spectatorNotice" class="spectator-banner hidden">Spectator mode: you can watch and chat.</div>
         <div id="winnerPanel" class="winner-panel hidden">
-          <p class="kicker">Match complete</p>
+          <p class="kicker">Round complete</p>
           <h2 id="winnerText">Winner</h2>
-          <p id="winnerSubtext">The host can deal the next round.</p>
-          <button id="playAgainBtn" class="primary-button" type="button">Play again</button>
+          <p id="winnerPoints">0 points earned</p>
+          <div id="roundStandings" class="round-standings"></div>
+          <p id="winnerSubtext">Next round begins in <strong id="rematchCountdown">10</strong>s.</p>
+          <div class="winner-actions">
+            <button id="playAgainBtn" class="primary-button" type="button">Play again</button>
+            <button id="winnerLeaveBtn" class="secondary-button" type="button">Leave game</button>
+          </div>
         </div>
       </div>
 
@@ -68,6 +90,7 @@
         </div>
         <div class="turn-actions">
           <button id="passTurnBtn" class="secondary-button" type="button" disabled>Keep card and pass</button>
+          <button id="catchUnoBtn" class="catch-button hidden" type="button">Catch UNO</button>
           <button id="unoBtn" class="uno-button" type="button" disabled>UNO</button>
         </div>
       </div>

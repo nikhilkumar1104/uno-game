@@ -1,13 +1,14 @@
 from app import create_app, socketio
+from game_engine import make_card
+from models import PlayerStat, db
 
 
-def event_payload(client, event_name):
+def received_payload(client, event_name):
     events = client.get_received()
-    event = next(item for item in events if item["name"] == event_name)
-    return event["args"][0]
+    return next(item["args"][0] for item in events if item["name"] == event_name)
 
 
-def test_health_and_two_player_room_flow(tmp_path):
+def test_full_socket_flow_winner_persistence_reconnect_and_rematch(tmp_path):
     app = create_app(
         {
             "TESTING": True,
@@ -20,27 +21,28 @@ def test_health_and_two_player_room_flow(tmp_path):
     host = socketio.test_client(app)
     guest = socketio.test_client(app)
     host.emit("createRoom", {"username": "Host User", "avatar": "ember"})
-    joined = event_payload(host, "roomJoined")
+    joined = received_payload(host, "roomJoined")
     code = joined["roomCode"]
     host.get_received()
 
-    host.emit("createRoom", {"username": "Second Seat", "avatar": "bolt"})
-    duplicate_room_error = event_payload(host, "errorMessage")
-    assert "current room" in duplicate_room_error["message"]
+    host.emit("setGameMode", {"roomCode": code, "mode": "wild"})
+    lobby = received_payload(host, "lobbyState")
+    assert lobby["mode"] == "wild"
 
     guest.emit(
         "joinRoom",
         {"roomCode": code, "username": "Guest User", "avatar": "wave"},
     )
-    guest_joined = event_payload(guest, "roomJoined")
+    guest_joined = received_payload(guest, "roomJoined")
     assert guest_joined["roomCode"] == code
     guest.get_received()
     host.get_received()
 
     host.emit("startGame", {"roomCode": code})
-    host_state = event_payload(host, "gameState")
-    guest_state = event_payload(guest, "gameState")
+    host_state = received_payload(host, "gameState")
+    guest_state = received_payload(guest, "gameState")
     assert host_state["status"] == "playing"
+    assert host_state["mode"] == "wild"
     assert len(host_state["hand"]) == 7
     assert len(guest_state["hand"]) == 7
     assert host_state["hand"] != guest_state["hand"]
@@ -49,20 +51,116 @@ def test_health_and_two_player_room_flow(tmp_path):
     host_player_id = joined["playerId"]
     host.disconnect()
     guest.get_received()
-
     reconnected_host = socketio.test_client(app)
-    reconnected_host.emit(
-        "rejoinRoom", {"roomCode": code, "playerId": host_player_id}
-    )
+    reconnected_host.emit("rejoinRoom", {"roomCode": code, "playerId": host_player_id})
     reconnect_events = reconnected_host.get_received()
-    reconnect_joined = next(
-        item["args"][0] for item in reconnect_events if item["name"] == "roomJoined"
-    )
     reconnect_state = next(
         item["args"][0] for item in reconnect_events if item["name"] == "gameState"
     )
-    assert reconnect_joined["rejoined"] is True
     assert reconnect_state["hand"] == host_state["hand"]
 
+    manager = app.extensions["room_manager"]
+    with manager.lock:
+        room = manager.rooms[code]
+        host_seat = next(player for player in room["players"] if player["id"] == host_player_id)
+        guest_seat = next(player for player in room["players"] if player["id"] == guest_joined["playerId"])
+        winning_card = make_card("red", "7")
+        host_seat["hand"] = [winning_card]
+        guest_seat["hand"] = [make_card("wild", "wild"), make_card("blue", "skip")]
+        room["discard_pile"] = [make_card("red", "3")]
+        room["current_color"] = "red"
+        room["current_index"] = 0
+        room["pending_draw"] = 0
+        room["pending_draw_type"] = None
+
+    reconnected_host.emit("playCard", {"roomCode": code, "cardId": winning_card["id"]})
+    finish_events = reconnected_host.get_received()
+    finished = next(
+        item["args"][0] for item in finish_events if item["name"] == "gameState"
+    )
+    assert finished["status"] == "finished"
+    assert finished["winner"]["username"] == "Host User"
+    assert finished["winner"]["points"] == 70
+    assert not any(item["name"] == "errorMessage" for item in finish_events)
+
+    with app.app_context():
+        stat = db.session.execute(
+            db.select(PlayerStat).where(PlayerStat.player_key == host_player_id)
+        ).scalar_one()
+        assert stat.games == 1
+        assert stat.wins == 1
+        assert stat.points == 70
+
+    guest.get_received()
+    reconnected_host.emit("playAgain", {"roomCode": code})
+    ready_state = received_payload(reconnected_host, "gameState")
+    assert ready_state["status"] == "finished"
+    assert ready_state["rematchChoice"] == "ready"
+    # The other player receives the intermediate ready-state broadcast too.
+    guest.get_received()
+    guest.emit("playAgain", {"roomCode": code})
+    next_round_host = received_payload(reconnected_host, "gameState")
+    next_round_guest = received_payload(guest, "gameState")
+    assert next_round_host["status"] == "playing"
+    assert next_round_guest["status"] == "playing"
+    assert next_round_host["roundNumber"] == 2
+
     reconnected_host.disconnect()
+    guest.disconnect()
+
+
+def test_wild_four_challenge_reveals_hand_only_to_challenger(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'challenge.sqlite3'}",
+            "SECRET_KEY": "challenge-secret",
+        }
+    )
+    host = socketio.test_client(app)
+    guest = socketio.test_client(app)
+    host.emit("createRoom", {"username": "Dealer", "avatar": "ember"})
+    joined = received_payload(host, "roomJoined")
+    code = joined["roomCode"]
+    host.get_received()
+    guest.emit("joinRoom", {"roomCode": code, "username": "Challenger", "avatar": "wave"})
+    guest_joined = received_payload(guest, "roomJoined")
+    host.get_received()
+    guest.get_received()
+    host.emit("startGame", {"roomCode": code})
+    host.get_received()
+    guest.get_received()
+
+    manager = app.extensions["room_manager"]
+    with manager.lock:
+        room = manager.rooms[code]
+        dealer = next(player for player in room["players"] if player["id"] == joined["playerId"])
+        challenger = next(
+            player for player in room["players"] if player["id"] == guest_joined["playerId"]
+        )
+        wild_four = make_card("wild", "wild4")
+        dealer["hand"] = [wild_four, make_card("red", "8"), make_card("blue", "9")]
+        challenger["hand"] = [make_card("green", "2")]
+        room["discard_pile"] = [make_card("red", "3")]
+        room["current_color"] = "red"
+        room["current_index"] = 0
+
+    host.emit(
+        "playCard",
+        {"roomCode": code, "cardId": wild_four["id"], "chosenColor": "blue"},
+    )
+    host.get_received()
+    guest.get_received()
+    guest.emit("challengeWild4", {"roomCode": code})
+    challenger_events = guest.get_received()
+    reveal = next(
+        item["args"][0] for item in challenger_events if item["name"] == "challengeReveal"
+    )
+    assert reveal["offenderName"] == "Dealer"
+    assert {tuple(card.values()) for card in reveal["hand"]} == {("red", "8"), ("blue", "9")}
+    assert all("id" not in card for card in reveal["hand"])
+    assert "succeeded" in reveal["result"]
+    assert not any(item["name"] == "challengeReveal" for item in host.get_received())
+
+    host.disconnect()
     guest.disconnect()

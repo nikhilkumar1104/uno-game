@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 
@@ -33,6 +34,7 @@ class MatchRecord(db.Model):
     winner_name = db.Column(db.String(18), nullable=False)
     players_json = db.Column(db.Text, nullable=False)
     move_count = db.Column(db.Integer, nullable=False, default=0)
+    points = db.Column(db.Integer, nullable=False, default=0)
     finished_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
@@ -42,12 +44,29 @@ class PlayerStat(db.Model):
     display_name = db.Column(db.String(18), nullable=False)
     games = db.Column(db.Integer, nullable=False, default=0)
     wins = db.Column(db.Integer, nullable=False, default=0)
+    points = db.Column(db.Integer, nullable=False, default=0)
     updated_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+def ensure_schema() -> None:
+    """Apply the small additive migration needed by pre-scoring SQLite databases."""
+    inspector = inspect(db.engine)
+    migrations = {
+        "match_record": ("points", "ALTER TABLE match_record ADD COLUMN points INTEGER NOT NULL DEFAULT 0"),
+        "player_stat": ("points", "ALTER TABLE player_stat ADD COLUMN points INTEGER NOT NULL DEFAULT 0"),
+    }
+    for table_name, (column_name, statement) in migrations.items():
+        if table_name not in inspector.get_table_names():
+            continue
+        columns = {column["name"] for column in inspector.get_columns(table_name)}
+        if column_name not in columns:
+            db.session.execute(text(statement))
+    db.session.commit()
 
 
 def _snapshot_payload(room: dict[str, Any]) -> str:
@@ -98,6 +117,7 @@ def record_match(room: dict[str, Any]) -> bool:
         winner_name=winner["username"],
         players_json=json.dumps([player["username"] for player in active]),
         move_count=room.get("move_count", 0),
+        points=int(winner.get("points", 0)),
     )
     db.session.add(record)
     for player in active:
@@ -105,12 +125,19 @@ def record_match(room: dict[str, Any]) -> bool:
             db.select(PlayerStat).where(PlayerStat.player_key == player["id"])
         ).scalar_one_or_none()
         if not stat:
-            stat = PlayerStat(player_key=player["id"], display_name=player["username"])
+            stat = PlayerStat(
+                player_key=player["id"],
+                display_name=player["username"],
+                games=0,
+                wins=0,
+                points=0,
+            )
             db.session.add(stat)
         stat.display_name = player["username"]
-        stat.games += 1
+        stat.games = (stat.games or 0) + 1
         if player["id"] == winner["id"]:
-            stat.wins += 1
+            stat.wins = (stat.wins or 0) + 1
+            stat.points = (stat.points or 0) + int(winner.get("points", 0))
     try:
         db.session.commit()
         return True

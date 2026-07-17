@@ -19,6 +19,25 @@
         </div>
         <span id="lobbyCapacity" class="capacity">1 / 6</span>
       </div>
+      <section class="mode-section" aria-labelledby="modeHeading">
+        <div class="mode-heading">
+          <div>
+            <p class="kicker">Game mode</p>
+            <h2 id="modeHeading">Choose the table rules</h2>
+          </div>
+          <span id="modeLockHint" class="player-note">Host selects</span>
+        </div>
+        <div class="mode-picker">
+          <button class="mode-option selected" data-mode="classic" type="button">
+            <strong>Classic</strong>
+            <span>Official rules, no stacking, +4 challenges</span>
+          </button>
+          <button class="mode-option" data-mode="wild" type="button">
+            <strong>Wild</strong>
+            <span>Stack +2 on +2, and +4 or +2 on +4</span>
+          </button>
+        </div>
+      </section>
       <div id="lobbyPlayers" class="lobby-player-grid"></div>
       <div class="lobby-footer">
         <p id="lobbyMessage" class="status-copy">Waiting for players...</p>

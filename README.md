@@ -10,11 +10,13 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Refresh-safe reconnect tokens stored in browser session storage
 - Standard 108-card UNO deck and seven-card opening hands
 - Number, Skip, Reverse, Draw Two, Wild, and Wild Draw Four cards
-- Legal Wild Draw Four validation
+- Classic mode with official no-stacking play and Wild Draw Four challenges
+- Wild mode with accumulating +2/+4 stacks (`+2` on `+2`, `+4` on `+4`, and `+2` on `+4`)
 - Draw-then-play or draw-then-pass flow
 - Two-player Reverse behavior, draw penalties, and skip behavior
-- UNO declaration with a two-card missed-UNO penalty
-- Server-side winner detection, table leaderboard, and match history
+- Working UNO declaration and a live Catch UNO window with a two-card penalty
+- Official round scoring, a 500-point table leaderboard, and match history
+- Round winner screen with points, standings, Play Again, Leave, and a 10-second auto-rematch
 - SQLite room snapshots, match records, and player statistics
 - Player avatars, sound toggle, dark/light themes, responsive mobile UI
 - Server-side input validation, message limits, duplicate-name prevention, and private hand projection
@@ -132,8 +134,35 @@ To test from phones or computers on the same Wi-Fi network, use the host compute
 3. On your turn, play a highlighted legal card or click the draw pile.
 4. After drawing a playable card, play that card or choose **Keep card and pass**.
 5. A Wild asks you to choose the next color.
-6. Click **UNO** when your hand reaches one card before the next player acts.
-7. The first player to empty their hand wins. The host can start the next match.
+6. Click **UNO** when your hand reaches one card. Until the next player acts, another player can click **Catch UNO** and give you two cards.
+7. In Classic mode, the next player can accept a Wild Draw Four or challenge it. An illegal +4 gives the offender four cards; a failed challenge gives the challenger six.
+8. In Wild mode, draw cards can be stacked using the combinations shown in the lobby. Drawing takes the complete accumulated penalty and ends the turn.
+9. The first player to empty their hand wins the round and receives the point value of every opponent card. Everyone is queued into the next round after 10 seconds unless they leave.
+
+## Game Modes
+
+The host selects a mode in the lobby before the first deal.
+
+### Classic
+
+- No stacking.
+- Draw Two and Wild Draw Four penalties skip the affected player.
+- Wild Draw Four may be challenged against the color that was active before it was played.
+- A successful challenge makes the offender draw 4. A failed challenge makes the challenger draw 6 and lose the turn.
+
+### Wild
+
+- `+2` can be played on `+2`.
+- `+4` can be played on `+4`.
+- `+2` can be played on `+4`.
+- Penalties accumulate until a player cannot or chooses not to stack, then that player draws the full total and loses the turn.
+
+### Round points
+
+- Number cards: face value
+- Skip, Reverse, and Draw Two: 20 points
+- Wild and Wild Draw Four: 50 points
+- The first player to reach 500 table points is marked as the match champion.
 
 ## Run Tests
 
@@ -141,7 +170,7 @@ To test from phones or computers on the same Wi-Fi network, use the host compute
 pytest -q
 ```
 
-The tests cover the 108-card deck, legal play projection, action-card penalties, Wild Draw Four restrictions, missed UNO penalties, private hands, and a two-browser Socket.IO room flow.
+The tests cover the 108-card deck, Classic penalties, Wild stacking combinations, Wild Draw Four accept/challenge results, UNO and Catch UNO timing, scoring, private hands, reconnects, final-card persistence, and a two-browser rematch flow.
 
 ## Push To GitHub
 
@@ -217,9 +246,12 @@ For durable SQLite data, create a Railway volume, mount it at `/data`, and add `
 | Client event | Purpose |
 | --- | --- |
 | `createRoom` / `joinRoom` / `rejoinRoom` | Seat and room lifecycle |
-| `startGame` / `playAgain` | Host-only match lifecycle |
+| `setGameMode` / `startGame` | Host mode selection and first-round lifecycle |
 | `playCard` / `drawCard` / `passTurn` | Turn actions validated by the server |
 | `declareUno` | One-card declaration |
+| `catchUno` | Catch a missed declaration during the active UNO window |
+| `acceptWild4` / `challengeWild4` | Resolve Classic-mode Wild Draw Four |
+| `playAgain` | Queue one player; a round starts early when every connected player is ready |
 | `chatMessage` | Sanitized room chat |
 | `leaveRoom` | Explicit room exit |
 
