@@ -1,0 +1,100 @@
+<section id="gameView" class="screen game-view hidden">
+  <header class="game-header">
+    <div class="game-room-meta">
+      <a class="brand compact-brand" href="/" aria-label="UNO Live home">
+        <span class="brand-uno">UNO</span><span>LIVE</span>
+      </a>
+      <div>
+        <p class="kicker">Room <span id="gameRoomCode"></span></p>
+        <h1 id="turnStatus">Waiting for the table</h1>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="copyGameCodeBtn" class="quiet-button" type="button">Copy code</button>
+      <button id="leaveGameBtn" class="quiet-button" type="button">Leave</button>
+    </div>
+  </header>
+
+  <div class="game-layout">
+    <aside class="players-sidebar">
+      <div class="aside-heading">
+        <p class="kicker">Seats</p>
+        <span id="directionLabel" class="direction-label">Clockwise</span>
+      </div>
+      <div id="gamePlayers" class="game-player-list"></div>
+
+      <div class="sidebar-tabs" role="tablist">
+        <button class="sidebar-tab active" data-panel="leaderboardPanel" type="button">Leaderboard</button>
+        <button class="sidebar-tab" data-panel="historyPanel" type="button">History</button>
+      </div>
+      <div id="leaderboardPanel" class="sidebar-panel">
+        <div id="leaderboard" class="leaderboard-list"></div>
+      </div>
+      <div id="historyPanel" class="sidebar-panel hidden">
+        <div id="matchHistory" class="match-history"></div>
+      </div>
+    </aside>
+
+    <section class="table-column">
+      <div class="table-surface">
+        <div id="opponentRail" class="opponent-rail"></div>
+        <div class="table-status">
+          <span id="turnPill" class="turn-pill">Waiting</span>
+          <span id="colorStatus" class="color-status"><i></i><span>No color</span></span>
+        </div>
+        <div class="pile-row">
+          <button id="drawPile" class="draw-pile" type="button" title="Draw one card">
+            <span class="card-back-logo">UNO</span>
+            <small id="drawPileCount">108</small>
+          </button>
+          <div class="discard-wrap">
+            <div id="discardPile" class="discard-pile" aria-label="Discard pile"></div>
+            <span>Discard</span>
+          </div>
+        </div>
+        <div id="spectatorNotice" class="spectator-banner hidden">Spectator mode: you can watch and chat.</div>
+        <div id="winnerPanel" class="winner-panel hidden">
+          <p class="kicker">Match complete</p>
+          <h2 id="winnerText">Winner</h2>
+          <p id="winnerSubtext">The host can deal the next round.</p>
+          <button id="playAgainBtn" class="primary-button" type="button">Play again</button>
+        </div>
+      </div>
+
+      <div class="hand-toolbar">
+        <div>
+          <p class="kicker">Your cards</p>
+          <h2><span id="handCount">0</span> in hand</h2>
+        </div>
+        <div class="turn-actions">
+          <button id="passTurnBtn" class="secondary-button" type="button" disabled>Keep card and pass</button>
+          <button id="unoBtn" class="uno-button" type="button" disabled>UNO</button>
+        </div>
+      </div>
+      <div id="playerHand" class="player-hand" aria-label="Your hand"></div>
+    </section>
+
+    <aside class="game-aside">
+      <section class="chat-panel game-chat" aria-label="Game chat">
+        <div class="chat-heading">
+          <div>
+            <p class="kicker">Table talk</p>
+            <h2>Game chat</h2>
+          </div>
+          <span class="live-dot">Live</span>
+        </div>
+        <div id="gameChatMessages" class="chat-messages" aria-live="polite"></div>
+        <form id="gameChatForm" class="chat-form">
+          <input id="gameChatInput" maxlength="240" placeholder="Write a message" aria-label="Game chat message">
+          <button class="send-button" type="submit">Send</button>
+        </form>
+      </section>
+
+      <section class="activity-panel">
+        <p class="kicker">Latest moves</p>
+        <h2>Table activity</h2>
+        <div id="eventList" class="event-list"></div>
+      </section>
+    </aside>
+  </div>
+</section>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0e12">
+  <title>UNO Live</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body data-initial-room="{{ initial_room_code }}">
+  <div id="connectionBanner" class="connection-banner hidden" role="status">Reconnecting...</div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <main class="app-shell">
+    <section id="welcomeView" class="screen welcome-view">
+      <header class="welcome-nav">
+        <a class="brand" href="/" aria-label="UNO Live home">
+          <span class="brand-uno">UNO</span><span>LIVE</span>
+        </a>
+        <div class="nav-actions">
+          <button id="soundToggle" class="quiet-button" type="button">Sound on</button>
+          <button id="themeToggle" class="quiet-button" type="button">Light mode</button>
+        </div>
+      </header>
+
+      <div class="welcome-layout">
+        <section class="welcome-copy" aria-labelledby="welcomeTitle">
+          <p class="kicker">Private multiplayer table</p>
+          <h1 id="welcomeTitle">Deal in your friends. Leave the rules to us.</h1>
+          <p class="welcome-lead">Create a room, share six characters, and play a synchronized 2 to 6 player UNO match from any browser.</p>
+          <div class="game-facts" aria-label="Game features">
+            <span>2-6 players</span>
+            <span>Live chat</span>
+            <span>Reconnect ready</span>
+          </div>
+        </section>
+
+        <form id="joinForm" class="entry-panel" autocomplete="off">
+          <div class="panel-heading">
+            <p class="kicker">Take a seat</p>
+            <h2>Create or join a table</h2>
+          </div>
+          <label class="field">
+            <span>Display name</span>
+            <input id="usernameInput" name="username" maxlength="18" minlength="2" placeholder="Your name" autocomplete="nickname" required>
+          </label>
+          <label class="field">
+            <span>Avatar style</span>
+            <select id="avatarInput" name="avatar">
+              <option value="ember">Ember</option>
+              <option value="bolt">Bolt</option>
+              <option value="wave">Wave</option>
+              <option value="leaf">Leaf</option>
+              <option value="star">Star</option>
+              <option value="nova">Nova</option>
+            </select>
+          </label>
+          <button id="createRoomBtn" class="primary-button" type="button">Create room</button>
+          <div class="divider"><span>or join with a code</span></div>
+          <div class="join-row">
+            <input id="roomCodeInput" name="roomCode" maxlength="6" inputmode="text" placeholder="ABC123" aria-label="Room invite code">
+            <button id="joinRoomBtn" class="secondary-button" type="submit">Join room</button>
+          </div>
+          <p class="form-status" id="welcomeStatus">Your hand stays private. Every move is checked by the server.</p>
+        </form>
+      </div>
+    </section>
+
+    {% include "room.html" %}
+    {% include "game.html" %}
+  </main>
+
+  <div id="colorModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="colorTitle">
+    <div class="modal-panel">
+      <p class="kicker">Wild card</p>
+      <h2 id="colorTitle">Choose the next color</h2>
+      <div class="color-picker">
+        <button class="color-choice red-choice" data-color="red" type="button">Red</button>
+        <button class="color-choice yellow-choice" data-color="yellow" type="button">Yellow</button>
+        <button class="color-choice green-choice" data-color="green" type="button">Green</button>
+        <button class="color-choice blue-choice" data-color="blue" type="button">Blue</button>
+      </div>
+      <button id="cancelColorBtn" class="quiet-button modal-cancel" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+</body>
+</html>

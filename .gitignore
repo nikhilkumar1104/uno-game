@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+database/*.sqlite3
+database/*.db
+*.sqlite3-journal
+.DS_Store
+.idea/
+.vscode/
+flask-uno-live.zip

@@ -1,0 +1,44 @@
+<section id="lobbyView" class="screen hidden">
+  <header class="room-header">
+    <div>
+      <p class="kicker">Room lobby</p>
+      <h1>Table <span id="lobbyRoomCode" class="room-code"></span></h1>
+    </div>
+    <div class="header-actions">
+      <button id="copyCodeBtn" class="secondary-button" type="button">Copy invite code</button>
+      <button id="leaveLobbyBtn" class="quiet-button" type="button">Leave</button>
+    </div>
+  </header>
+
+  <div class="lobby-grid">
+    <section class="lobby-main">
+      <div class="section-heading">
+        <div>
+          <p class="kicker">Players</p>
+          <h2><span id="lobbyPlayerCount">1</span> at the table</h2>
+        </div>
+        <span id="lobbyCapacity" class="capacity">1 / 6</span>
+      </div>
+      <div id="lobbyPlayers" class="lobby-player-grid"></div>
+      <div class="lobby-footer">
+        <p id="lobbyMessage" class="status-copy">Waiting for players...</p>
+        <button id="startGameBtn" class="primary-button start-button" type="button" disabled>Start game</button>
+      </div>
+    </section>
+
+    <aside class="chat-panel" aria-label="Room chat">
+      <div class="chat-heading">
+        <div>
+          <p class="kicker">Table talk</p>
+          <h2>Room chat</h2>
+        </div>
+        <span class="live-dot">Live</span>
+      </div>
+      <div id="lobbyChatMessages" class="chat-messages" aria-live="polite"></div>
+      <form id="lobbyChatForm" class="chat-form">
+        <input id="lobbyChatInput" maxlength="240" placeholder="Write a message" aria-label="Room chat message">
+        <button class="send-button" type="submit">Send</button>
+      </form>
+    </aside>
+  </div>
+</section>
