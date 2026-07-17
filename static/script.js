@@ -511,6 +511,11 @@ function applyTheme(theme) {
 }
 
 function initializeSocket() {
+  if (typeof window.io !== "function") {
+    byId("welcomeStatus").textContent = "The real-time client could not load. Refresh the page and try again.";
+    toast("The Socket.IO client failed to load.", true);
+    return;
+  }
   state.socket = io({ transports: ["websocket", "polling"], reconnection: true });
   state.socket.on("connect", () => {
     byId("connectionBanner").classList.add("hidden");
