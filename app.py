@@ -370,6 +370,8 @@ def handle_create_room(data: dict[str, Any] | None) -> None:
             {
                 "roomCode": room["code"],
                 "playerId": player["id"],
+                "username": player["username"],
+                "avatar": player["avatar"],
                 "isHost": True,
                 "spectator": False,
             },
@@ -383,11 +385,12 @@ def handle_create_room(data: dict[str, Any] | None) -> None:
 def handle_join_room(data: dict[str, Any] | None) -> None:
     try:
         payload = data or {}
-        room, player = _manager().join_room(
+        room, player, rejoined = _manager().join_room(
             request.sid,
             payload.get("roomCode"),
             payload.get("username"),
             payload.get("avatar"),
+            payload.get("playerId"),
         )
         socket_join_room(room["code"])
         _persist(room)
@@ -396,13 +399,22 @@ def handle_join_room(data: dict[str, Any] | None) -> None:
             {
                 "roomCode": room["code"],
                 "playerId": player["id"],
+                "username": player["username"],
+                "avatar": player["avatar"],
                 "isHost": player["id"] == room["host_id"],
                 "spectator": player["spectator"],
+                "rejoined": rejoined,
             },
         )
         socketio.emit(
             "notification",
-            {"message": f"{player['username']} joined the room."},
+            {
+                "message": (
+                    f"{player['username']} rejoined and can continue the game."
+                    if rejoined
+                    else f"{player['username']} joined the room."
+                )
+            },
             to=room["code"],
         )
         _send_state(room)
@@ -426,6 +438,8 @@ def handle_rejoin_room(data: dict[str, Any] | None) -> None:
             {
                 "roomCode": room["code"],
                 "playerId": player["id"],
+                "username": player["username"],
+                "avatar": player["avatar"],
                 "isHost": player["id"] == room["host_id"],
                 "spectator": player["spectator"],
                 "rejoined": True,

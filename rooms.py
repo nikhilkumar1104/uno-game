@@ -236,8 +236,8 @@ class RoomManager:
             return room, player
 
     def join_room(
-        self, sid: str, room_code: Any, username: Any, avatar: Any
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        self, sid: str, room_code: Any, username: Any, avatar: Any, player_id: Any = None
+    ) -> tuple[dict[str, Any], dict[str, Any], bool]:
         with self.lock:
             self._require_unseated_socket(sid)
             code = str(room_code or "").strip().upper()
@@ -245,8 +245,31 @@ class RoomManager:
             if not room:
                 raise GameRuleError("Room not found. Check the invite code.")
             name = clean_username(username)
-            if any(player["username"].casefold() == name.casefold() for player in room["players"]):
-                raise GameRuleError("That display name is already used in this room.")
+            existing = next(
+                (player for player in room["players"] if player["username"].casefold() == name.casefold()),
+                None,
+            )
+            recovery_token = str(player_id or "")
+            if existing:
+                valid_recovery = (
+                    recovery_token
+                    and secrets.compare_digest(existing["id"], recovery_token)
+                    and (not existing.get("left") or room["status"] == "playing")
+                    and not existing.get("is_bot")
+                )
+                if not valid_recovery:
+                    raise GameRuleError(
+                        "That name already has a reserved seat. Reopen this room in the same browser to continue."
+                    )
+                old_sid = existing.get("socket_id")
+                if old_sid:
+                    self.sid_to_player.pop(old_sid, None)
+                existing["socket_id"] = sid
+                existing["connected"] = True
+                existing["left"] = False
+                self.sid_to_player[sid] = (code, existing["id"])
+                room["updated_at"] = time.time()
+                return room, existing, True
 
             active_count = sum(not player["spectator"] for player in room["players"])
             spectator = room["status"] != "lobby" or active_count >= 6
@@ -258,7 +281,7 @@ class RoomManager:
             room["players"].append(player)
             room["updated_at"] = time.time()
             self.sid_to_player[sid] = (code, player["id"])
-            return room, player
+            return room, player, False
 
     def rejoin_room(self, sid: str, room_code: Any, player_id: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         with self.lock:
@@ -268,13 +291,18 @@ class RoomManager:
                 raise GameRuleError("That room has expired.")
             token = str(player_id or "")
             player = next((seat for seat in room["players"] if seat["id"] == token), None)
-            if not player or player.get("left") or player.get("is_bot"):
+            if (
+                not player
+                or player.get("is_bot")
+                or (player.get("left") and room["status"] != "playing")
+            ):
                 raise GameRuleError("Your saved seat is no longer available.")
             old_sid = player.get("socket_id")
             if old_sid:
                 self.sid_to_player.pop(old_sid, None)
             player["socket_id"] = sid
             player["connected"] = True
+            player["left"] = False
             self.sid_to_player[sid] = (code, player["id"])
             room["updated_at"] = time.time()
             return room, player

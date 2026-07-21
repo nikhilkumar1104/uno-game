@@ -28,8 +28,8 @@ def test_index_bundles_socket_client_instead_of_external_cdn(tmp_path):
     service_worker = client.get("/sw.js")
     assert service_worker.status_code == 200
     assert service_worker.headers["Service-Worker-Allowed"] == "/"
-    assert b'uno-live-release-1-v2' in service_worker.data
-    assert '/static/style.css?v=6' in html
+    assert b'uno-live-release-1-v3' in service_worker.data
+    assert '/static/style.css?v=7' in html
     assert 'id="leaveConfirmModal"' in html
     assert 'data-game-aside-panel="rulesPanel"' in html
     assert "Play a 7 to choose a player and swap hands" in html
@@ -142,6 +142,72 @@ def test_full_socket_flow_winner_persistence_reconnect_and_rematch(tmp_path):
     assert next_round_host["roundNumber"] == 2
 
     reconnected_host.disconnect()
+    guest.disconnect()
+
+
+def test_join_button_can_recover_a_disconnected_reserved_seat(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'join-recovery.sqlite3'}",
+            "SECRET_KEY": "join-recovery-secret",
+        }
+    )
+    host = socketio.test_client(app)
+    guest = socketio.test_client(app)
+    host.emit("createRoom", {"username": "Returning Player", "avatar": "ember"})
+    host_joined = received_payload(host, "roomJoined")
+    code = host_joined["roomCode"]
+    host.get_received()
+    guest.emit("joinRoom", {"roomCode": code, "username": "Opponent", "avatar": "wave"})
+    received_payload(guest, "roomJoined")
+    host.get_received()
+    guest.get_received()
+    host.emit("startGame", {"roomCode": code})
+    original_state = received_payload(host, "gameState")
+    guest.get_received()
+    host.disconnect()
+    guest.get_received()
+
+    replacement = socketio.test_client(app)
+    replacement.emit(
+        "joinRoom",
+        {
+            "roomCode": code,
+            "username": "Returning Player",
+            "avatar": "ember",
+            "playerId": host_joined["playerId"],
+        },
+    )
+    events = replacement.get_received()
+    joined = next(item["args"][0] for item in events if item["name"] == "roomJoined")
+    restored = next(item["args"][0] for item in events if item["name"] == "gameState")
+    assert joined["rejoined"] is True
+    assert joined["spectator"] is False
+    assert restored["hand"] == original_state["hand"]
+    assert not any(item["name"] == "errorMessage" for item in events)
+
+    replacement.emit("leaveRoom", {"roomCode": code})
+    assert any(item["name"] == "leftRoom" for item in replacement.get_received())
+    guest.get_received()
+
+    returned_after_leave = socketio.test_client(app)
+    returned_after_leave.emit(
+        "rejoinRoom",
+        {"roomCode": code, "playerId": host_joined["playerId"]},
+    )
+    post_leave_events = returned_after_leave.get_received()
+    post_leave_join = next(
+        item["args"][0] for item in post_leave_events if item["name"] == "roomJoined"
+    )
+    post_leave_state = next(
+        item["args"][0] for item in post_leave_events if item["name"] == "gameState"
+    )
+    assert post_leave_join["rejoined"] is True
+    assert post_leave_state["hand"] == original_state["hand"]
+
+    replacement.disconnect()
+    returned_after_leave.disconnect()
     guest.disconnect()
 
 

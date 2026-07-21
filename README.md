@@ -30,7 +30,9 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Basic peer-to-peer WebRTC voice chat with mute, deafen, speaking, and connection-quality indicators
 - Quick emoji reactions and table-wide chat popups
 - Always-visible compact chat on portrait mobile and a fixed Chat/Voice/Activity/Rules panel on desktop
-- Confirm-before-leaving flow; accidental refreshes, tab closes, and network drops preserve the player's seat and hand
+- Height-responsive desktop cards and separated status/pile lanes at normal browser zoom
+- Scroll-preserving mobile chat history with iPhone-safe input sizing and non-overlapping Settings controls
+- Confirm-before-leaving flow; refreshes, tab closes, network drops, and an active-game leave preserve a token-protected seat and hand
 - Viewport-stable gameplay that preserves page and hand position after every live update
 - Locally bundled Socket.IO browser client with no runtime CDN dependency
 - Server-side input validation, message limits, duplicate-name prevention, and private hand projection
@@ -160,6 +162,8 @@ To test from phones or computers on the same Wi-Fi network, use the host compute
 7. In Classic mode, the next player can accept a Wild Draw Four or challenge it. An illegal +4 gives the offender four cards; a failed challenge gives the challenger six.
 8. In Wild mode, draw cards can be stacked using the combinations shown in the lobby. Drawing takes the complete accumulated penalty and ends the turn.
 9. The first player to empty their hand wins the round and receives the point value of every opponent card. Everyone is queued into the next round after 10 seconds unless they leave.
+
+If a tab closes, the network drops, or you leave during an active round, open the same room code again in the same browser. UNO Live uses that browser's private recovery token to restore the original seat and hand. A copied username alone cannot claim another player's seat.
 
 Use the floating **Settings** control at any time to adjust effects/music and enable color symbols, high contrast, or reduced motion. Browsers require a user click before music can begin.
 

@@ -8,10 +8,22 @@ const views = {
   game: byId("gameView"),
 };
 
+const invitedRoomCode = String(document.body.dataset.initialRoom || "").trim().toUpperCase();
+const storedRoomCode = sessionStorage.getItem("uno.roomCode")
+  || localStorage.getItem("uno.activeRoomCode")
+  || "";
+const initialRoomCode = invitedRoomCode || storedRoomCode;
+const roomRecoveryPlayerId = initialRoomCode
+  ? localStorage.getItem(`uno.rejoin.${initialRoomCode}`) || ""
+  : "";
+const storedPlayerId = sessionStorage.getItem("uno.playerId")
+  || localStorage.getItem("uno.activePlayerId")
+  || "";
+
 const state = {
   socket: null,
-  roomCode: sessionStorage.getItem("uno.roomCode") || localStorage.getItem("uno.activeRoomCode") || "",
-  playerId: sessionStorage.getItem("uno.playerId") || localStorage.getItem("uno.activePlayerId") || "",
+  roomCode: initialRoomCode,
+  playerId: roomRecoveryPlayerId || (initialRoomCode === storedRoomCode ? storedPlayerId : ""),
   username: sessionStorage.getItem("uno.username") || localStorage.getItem("uno.activeUsername") || "",
   avatar: sessionStorage.getItem("uno.avatar") || localStorage.getItem("uno.activeAvatar") || "ember",
   isHost: false,
@@ -26,6 +38,7 @@ const state = {
   musicEnabled: localStorage.getItem("uno.music") === "on",
   musicVolume: Math.min(1, Math.max(0, Number(localStorage.getItem("uno.musicVolume") || 0.2))),
   busy: false,
+  rejoinPending: false,
   actionPending: false,
   countdownTimer: null,
   previousWinnerId: null,
@@ -47,16 +60,6 @@ const state = {
     speaking: false,
   },
 };
-
-const invitedRoomCode = document.body.dataset.initialRoom || "";
-if (invitedRoomCode && state.roomCode && invitedRoomCode !== state.roomCode) {
-  sessionStorage.removeItem("uno.roomCode");
-  sessionStorage.removeItem("uno.playerId");
-  localStorage.removeItem("uno.activeRoomCode");
-  localStorage.removeItem("uno.activePlayerId");
-  state.roomCode = "";
-  state.playerId = "";
-}
 
 const CARD_LABELS = {
   skip: "SKIP",
@@ -88,6 +91,7 @@ function showView(name) {
   const isAlreadyVisible = !views[name].classList.contains("hidden");
   Object.values(views).forEach((view) => view.classList.add("hidden"));
   views[name].classList.remove("hidden");
+  document.body.dataset.view = name;
   if (name !== "game") document.body.dataset.mobilePanel = "";
   if (!isAlreadyVisible) window.scrollTo({ top: 0, behavior: "auto" });
 }
@@ -101,19 +105,25 @@ function persistSession() {
   localStorage.setItem("uno.activePlayerId", state.playerId);
   localStorage.setItem("uno.activeUsername", state.username);
   localStorage.setItem("uno.activeAvatar", state.avatar);
+  if (state.roomCode && state.playerId) {
+    localStorage.setItem(`uno.rejoin.${state.roomCode}`, state.playerId);
+  }
 }
 
-function clearSession() {
+function clearSession({ keepRecovery = false } = {}) {
+  const roomCode = state.roomCode;
   ["uno.roomCode", "uno.playerId", "uno.username", "uno.avatar"].forEach((key) => {
     sessionStorage.removeItem(key);
   });
   ["uno.activeRoomCode", "uno.activePlayerId", "uno.activeUsername", "uno.activeAvatar"].forEach((key) => {
     localStorage.removeItem(key);
   });
+  if (roomCode && !keepRecovery) localStorage.removeItem(`uno.rejoin.${roomCode}`);
   state.roomCode = "";
   state.playerId = "";
   state.game = null;
   state.isHost = false;
+  state.rejoinPending = false;
   state.messageIds.clear();
 }
 
@@ -746,12 +756,16 @@ function renderChat(messages) {
   state.messageIds = new Set(messages.map((message) => message.id));
   [byId("lobbyChatMessages"), byId("gameChatMessages")].forEach((container) => {
     if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop;
+    const stayAtBottom = distanceFromBottom <= container.clientHeight + 40;
     if (!messages.length) {
       container.replaceChildren(emptyState("No messages yet. Say hello."));
       return;
     }
     container.replaceChildren(...messages.map(makeChatMessage));
-    container.scrollTop = container.scrollHeight;
+    container.scrollTop = stayAtBottom
+      ? container.scrollHeight
+      : Math.max(0, container.scrollHeight - distanceFromBottom);
   });
 }
 
@@ -763,9 +777,10 @@ function appendChat(message) {
     // Otherwise opening Chat after spending time in Voice/Activity would omit
     // messages received during that period.
     if (!container) return;
+    const stayAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 40;
     container.querySelector(".empty-state")?.remove();
     container.appendChild(makeChatMessage(message));
-    container.scrollTop = container.scrollHeight;
+    if (stayAtBottom) container.scrollTop = container.scrollHeight;
   });
   const emojiOnly = /^[\p{Extended_Pictographic}\u200d\ufe0f]+$/u.test(message.text);
   showActionPopup(emojiOnly ? "reaction" : "chat", `${message.username}: ${message.text}`);
@@ -838,6 +853,17 @@ function submitJoin(createRoom) {
       return;
     }
     payload.roomCode = roomCode;
+    const recoveryPlayerId = localStorage.getItem(`uno.rejoin.${roomCode}`)
+      || (state.roomCode === roomCode ? state.playerId : "");
+    if (recoveryPlayerId) {
+      state.roomCode = roomCode;
+      state.playerId = recoveryPlayerId;
+      state.rejoinPending = true;
+      setBusy(true);
+      byId("welcomeStatus").textContent = "Rejoining your reserved seat...";
+      state.socket.emit("rejoinRoom", { roomCode, playerId: recoveryPlayerId });
+      return;
+    }
   }
   setBusy(true);
   state.socket.emit(createRoom ? "createRoom" : "joinRoom", payload);
@@ -1132,6 +1158,9 @@ function initializeSocket() {
   state.socket.on("connect", () => {
     byId("connectionBanner").classList.add("hidden");
     if (state.roomCode && state.playerId) {
+      state.rejoinPending = true;
+      setBusy(true);
+      byId("welcomeStatus").textContent = "Rejoining your reserved seat...";
       state.socket.emit("rejoinRoom", { roomCode: state.roomCode, playerId: state.playerId });
     }
   });
@@ -1142,11 +1171,15 @@ function initializeSocket() {
   });
   state.socket.on("roomJoined", (payload) => {
     setBusy(false);
+    state.rejoinPending = false;
     state.roomCode = payload.roomCode;
     state.playerId = payload.playerId;
+    state.username = payload.username || state.username;
+    state.avatar = payload.avatar || state.avatar;
     state.isHost = payload.isHost;
     persistSession();
     history.replaceState({}, "", `/room/${state.roomCode}`);
+    if (payload.rejoined) toast("Seat restored. You can continue with the same hand.");
     if (payload.spectator && !payload.rejoined) toast("The match is active. You joined as a spectator.");
   });
   state.socket.on("lobbyState", renderLobby);
@@ -1179,11 +1212,15 @@ function initializeSocket() {
     toast(message || "Your saved room is no longer available.", true);
   });
   state.socket.on("leftRoom", () => {
+    const keepRecovery = state.game?.status === "playing";
     leaveVoice(false);
-    clearSession();
+    clearSession({ keepRecovery });
     showView("welcome");
     history.replaceState({}, "", "/");
     document.title = "UNO Live";
+    if (keepRecovery) {
+      toast("Your seat is reserved. Enter the same room code on this browser to rejoin.");
+    }
   });
 }
 
@@ -1407,19 +1444,33 @@ document.querySelectorAll(".sidebar-tab").forEach((tab) => {
 
 wireChat("lobbyChatForm", "lobbyChatInput");
 wireChat("gameChatForm", "gameChatInput");
+[byId("lobbyChatInput"), byId("gameChatInput")].forEach((input) => {
+  input.addEventListener("focus", () => {
+    document.body.dataset.chatFocus = "true";
+    byId("audioSettingsPanel").classList.add("hidden");
+  });
+  input.addEventListener("blur", () => {
+    window.setTimeout(() => { document.body.dataset.chatFocus = "false"; }, 120);
+  });
+});
 document.querySelectorAll("button[data-reaction]").forEach((button) => {
   button.addEventListener("click", () => send("chatMessage", { text: button.dataset.reaction }));
 });
 
-byId("audioSettingsBtn").addEventListener("click", () => {
+function toggleAudioSettings() {
   const panel = byId("audioSettingsPanel");
   const opening = panel.classList.contains("hidden");
   panel.classList.toggle("hidden", !opening);
   byId("audioSettingsBtn").setAttribute("aria-expanded", String(opening));
-});
+  byId("gameSettingsBtn").setAttribute("aria-expanded", String(opening));
+}
+
+byId("audioSettingsBtn").addEventListener("click", toggleAudioSettings);
+byId("gameSettingsBtn").addEventListener("click", toggleAudioSettings);
 byId("closeAudioSettingsBtn").addEventListener("click", () => {
   byId("audioSettingsPanel").classList.add("hidden");
   byId("audioSettingsBtn").setAttribute("aria-expanded", "false");
+  byId("gameSettingsBtn").setAttribute("aria-expanded", "false");
 });
 
 byId("soundToggle").addEventListener("click", () => {
