@@ -431,6 +431,11 @@ def handle_rejoin_room(data: dict[str, Any] | None) -> None:
                 "rejoined": True,
             },
         )
+        socketio.emit(
+            "notification",
+            {"message": f"{player['username']} rejoined and can continue the game."},
+            to=room["code"],
+        )
         _send_state(room)
         if room["status"] == "playing":
             _schedule_bot_turn(room)

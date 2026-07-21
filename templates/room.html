@@ -6,7 +6,7 @@
     </div>
     <div class="header-actions">
       <button id="copyCodeBtn" class="secondary-button" type="button">Copy invite code</button>
-      <button id="leaveLobbyBtn" class="quiet-button" type="button">Leave</button>
+      <button id="leaveLobbyBtn" class="quiet-button" type="button">Leave game</button>
     </div>
   </header>
 
@@ -47,10 +47,11 @@
         </div>
         <details class="custom-rules">
           <summary>Custom room rules</summary>
+          <p class="custom-rules-intro">Optional house rules. They work with both Classic and Wild mode and are enforced by the server for every player.</p>
           <div class="rule-builder">
-            <label><input class="room-rule-input" data-rule="seven_zero" type="checkbox"> <span><strong>Seven-O</strong><small>7 swaps hands; 0 rotates every hand</small></span></label>
-            <label><input class="room-rule-input" data-rule="jump_in" type="checkbox"> <span><strong>Jump-In</strong><small>Play an exact match out of turn</small></span></label>
-            <label><input class="room-rule-input" data-rule="forced_play" type="checkbox"> <span><strong>Forced Play</strong><small>Playable drawn cards are used immediately</small></span></label>
+            <label title="Playing a 7 lets you choose another active player and swap your remaining hands. Playing a 0 rotates every hand in the current direction."><input class="room-rule-input" data-rule="seven_zero" type="checkbox"> <span><strong>Seven-O</strong><small>Play a 7 to choose a player and swap hands. Play a 0 to rotate all hands in the current direction.</small></span></label>
+            <label title="You may interrupt another turn only with a card whose color and value or action symbol exactly match the top discard."><input class="room-rule-input" data-rule="jump_in" type="checkbox"> <span><strong>Jump-In</strong><small>Interrupt with an exact color-and-symbol match. The turn continues from the player who jumped in.</small></span></label>
+            <label title="When the card you draw is playable, the server plays it immediately instead of offering the Keep and Pass option."><input class="room-rule-input" data-rule="forced_play" type="checkbox"> <span><strong>Forced Play</strong><small>A playable drawn card is played immediately. For a Wild, the server selects your strongest remaining color.</small></span></label>
           </div>
         </details>
       </section>

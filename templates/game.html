@@ -11,9 +11,9 @@
     </div>
     <div class="header-actions">
       <button id="mobileSeatsBtn" class="quiet-button mobile-panel-button" type="button">Seats</button>
-      <button id="mobileTalkBtn" class="quiet-button mobile-panel-button" type="button">Talk</button>
+      <button id="mobileTalkBtn" class="quiet-button mobile-panel-button" type="button">Chat</button>
       <button id="copyGameCodeBtn" class="quiet-button" type="button">Copy code</button>
-      <button id="leaveGameBtn" class="quiet-button" type="button">Leave</button>
+      <button id="leaveGameBtn" class="quiet-button" type="button">Leave game</button>
     </div>
   </header>
 
@@ -103,23 +103,15 @@
       <div id="playerHand" class="player-hand" aria-label="Your hand"></div>
     </section>
 
-    <aside class="game-aside">
-      <section class="voice-panel" aria-labelledby="voiceHeading">
-        <div class="voice-heading">
-          <div>
-            <p class="kicker">Peer-to-peer audio</p>
-            <h2 id="voiceHeading">Table voice</h2>
-          </div>
-          <span id="voiceQuality" class="quality-badge offline">Offline</span>
-        </div>
-        <div id="voiceParticipants" class="voice-participants"><span class="empty-state">Voice is optional.</span></div>
-        <div class="voice-actions">
-          <button id="voiceJoinBtn" class="secondary-button" type="button">Join voice</button>
-          <button id="voiceMuteBtn" class="quiet-button hidden" type="button">Mute</button>
-          <button id="voiceDeafenBtn" class="quiet-button hidden" type="button">Deafen</button>
-        </div>
-      </section>
-      <section class="chat-panel game-chat" aria-label="Game chat">
+    <aside class="game-aside" aria-label="Communication and activity">
+      <div class="game-aside-tabs" role="tablist" aria-label="Game side panels">
+        <button class="game-aside-tab active" data-game-aside-panel="gameChatPanel" type="button" role="tab" aria-selected="true">Chat</button>
+        <button class="game-aside-tab" data-game-aside-panel="voicePanel" type="button" role="tab" aria-selected="false">Voice</button>
+        <button class="game-aside-tab" data-game-aside-panel="activityPanel" type="button" role="tab" aria-selected="false">Activity</button>
+        <button class="game-aside-tab" data-game-aside-panel="rulesPanel" type="button" role="tab" aria-selected="false">Rules</button>
+      </div>
+
+      <section id="gameChatPanel" class="chat-panel game-chat game-aside-panel" aria-label="Game chat">
         <div class="chat-heading">
           <div>
             <p class="kicker">Table talk</p>
@@ -141,10 +133,32 @@
         </form>
       </section>
 
-      <section class="activity-panel">
+      <section id="voicePanel" class="voice-panel game-aside-panel hidden" aria-labelledby="voiceHeading">
+        <div class="voice-heading">
+          <div>
+            <p class="kicker">Peer-to-peer audio</p>
+            <h2 id="voiceHeading">Table voice</h2>
+          </div>
+          <span id="voiceQuality" class="quality-badge offline">Offline</span>
+        </div>
+        <div id="voiceParticipants" class="voice-participants"><span class="empty-state">Voice is optional.</span></div>
+        <div class="voice-actions">
+          <button id="voiceJoinBtn" class="secondary-button" type="button">Join voice</button>
+          <button id="voiceMuteBtn" class="quiet-button hidden" type="button">Mute</button>
+          <button id="voiceDeafenBtn" class="quiet-button hidden" type="button">Deafen</button>
+        </div>
+      </section>
+
+      <section id="activityPanel" class="activity-panel game-aside-panel hidden">
         <p class="kicker">Latest moves</p>
         <h2>Table activity</h2>
         <div id="eventList" class="event-list"></div>
+      </section>
+
+      <section id="rulesPanel" class="rules-panel game-aside-panel hidden" aria-labelledby="activeRulesHeading">
+        <p class="kicker">How this room plays</p>
+        <h2 id="activeRulesHeading">Active rules</h2>
+        <div id="activeRulesList" class="active-rules-list"></div>
       </section>
     </aside>
   </div>

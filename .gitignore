@@ -13,4 +13,4 @@ database/*.db
 .DS_Store
 .idea/
 .vscode/
-flask-uno-live.zip
+*.zip

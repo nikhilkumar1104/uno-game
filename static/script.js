@@ -10,10 +10,10 @@ const views = {
 
 const state = {
   socket: null,
-  roomCode: sessionStorage.getItem("uno.roomCode") || "",
-  playerId: sessionStorage.getItem("uno.playerId") || "",
-  username: sessionStorage.getItem("uno.username") || "",
-  avatar: sessionStorage.getItem("uno.avatar") || "ember",
+  roomCode: sessionStorage.getItem("uno.roomCode") || localStorage.getItem("uno.activeRoomCode") || "",
+  playerId: sessionStorage.getItem("uno.playerId") || localStorage.getItem("uno.activePlayerId") || "",
+  username: sessionStorage.getItem("uno.username") || localStorage.getItem("uno.activeUsername") || "",
+  avatar: sessionStorage.getItem("uno.avatar") || localStorage.getItem("uno.activeAvatar") || "ember",
   isHost: false,
   game: null,
   selectedWildCardId: null,
@@ -52,6 +52,8 @@ const invitedRoomCode = document.body.dataset.initialRoom || "";
 if (invitedRoomCode && state.roomCode && invitedRoomCode !== state.roomCode) {
   sessionStorage.removeItem("uno.roomCode");
   sessionStorage.removeItem("uno.playerId");
+  localStorage.removeItem("uno.activeRoomCode");
+  localStorage.removeItem("uno.activePlayerId");
   state.roomCode = "";
   state.playerId = "";
 }
@@ -95,11 +97,18 @@ function persistSession() {
   sessionStorage.setItem("uno.playerId", state.playerId);
   sessionStorage.setItem("uno.username", state.username);
   sessionStorage.setItem("uno.avatar", state.avatar);
+  localStorage.setItem("uno.activeRoomCode", state.roomCode);
+  localStorage.setItem("uno.activePlayerId", state.playerId);
+  localStorage.setItem("uno.activeUsername", state.username);
+  localStorage.setItem("uno.activeAvatar", state.avatar);
 }
 
 function clearSession() {
   ["uno.roomCode", "uno.playerId", "uno.username", "uno.avatar"].forEach((key) => {
     sessionStorage.removeItem(key);
+  });
+  ["uno.activeRoomCode", "uno.activePlayerId", "uno.activeUsername", "uno.activeAvatar"].forEach((key) => {
+    localStorage.removeItem(key);
   });
   state.roomCode = "";
   state.playerId = "";
@@ -485,6 +494,37 @@ function renderEvents(events) {
   );
 }
 
+function renderActiveRules(game) {
+  const descriptions = [
+    game.mode === "wild"
+      ? ["Wild stacking", "+2 stacks only on +2, and +4 only on +4. Cross-stacking is blocked. Draw the full total when you cannot continue."]
+      : ["Classic", "No stacking. A +4 may be challenged and is legal only when its player has no card matching the active color."],
+  ];
+  if (game.playFormat === "teams") {
+    descriptions.push(["2v2 teams", "Four alternating seats form two teams. A team wins the round when either partner empties their hand."]);
+  }
+  if (game.rules?.seven_zero) {
+    descriptions.push(["Seven-O", "A 7 swaps your remaining hand with a chosen player. A 0 rotates every hand in the current direction."]);
+  }
+  if (game.rules?.jump_in) {
+    descriptions.push(["Jump-In", "Interrupt any turn with an exact color-and-symbol match. Play continues from the player who jumped in."]);
+  }
+  if (game.rules?.forced_play) {
+    descriptions.push(["Forced Play", "A playable drawn card is played immediately. For a Wild, the server chooses your strongest remaining color."]);
+  }
+
+  byId("activeRulesList").replaceChildren(...descriptions.map(([title, copy]) => {
+    const item = document.createElement("article");
+    item.className = "active-rule";
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+    const text = document.createElement("span");
+    text.textContent = copy;
+    item.append(heading, text);
+    return item;
+  }));
+}
+
 function emptyState(text) {
   const element = document.createElement("p");
   element.className = "empty-state";
@@ -665,6 +705,7 @@ function renderGame(game) {
   renderLeaderboard(game.leaderboard || []);
   renderMatchHistory(game.matchHistory || []);
   renderEvents(game.events || []);
+  renderActiveRules(game);
   renderChat(game.chat || []);
   renderVoiceParticipants();
   if (preserveViewport) {
@@ -718,7 +759,10 @@ function appendChat(message) {
   if (state.messageIds.has(message.id)) return;
   state.messageIds.add(message.id);
   [byId("lobbyChatMessages"), byId("gameChatMessages")].forEach((container) => {
-    if (!container || container.closest(".hidden")) return;
+    // Keep every chat surface synchronized even while its tab is hidden.
+    // Otherwise opening Chat after spending time in Voice/Activity would omit
+    // messages received during that period.
+    if (!container) return;
     container.querySelector(".empty-state")?.remove();
     container.appendChild(makeChatMessage(message));
     container.scrollTop = container.scrollHeight;
@@ -820,6 +864,22 @@ function leaveRoom() {
     clearSession();
     showView("welcome");
   }
+}
+
+function requestLeaveConfirmation() {
+  const playing = state.game?.status === "playing";
+  byId("leaveConfirmTitle").textContent = playing
+    ? "Are you sure you want to leave the game?"
+    : "Are you sure you want to leave this table?";
+  byId("leaveConfirmCopy").textContent = playing
+    ? "Leaving intentionally removes you from this match. If the page closes or your network drops accidentally, do not press Leave game—you can reopen the site and continue with the same hand."
+    : "You will leave this room and give up your reserved seat. You can join again later only if a seat is still available.";
+  byId("leaveConfirmModal").classList.remove("hidden");
+  byId("cancelLeaveBtn").focus();
+}
+
+function closeLeaveConfirmation() {
+  byId("leaveConfirmModal").classList.add("hidden");
 }
 
 function wireChat(formId, inputId) {
@@ -1147,8 +1207,8 @@ byId("lobbyPlayers").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-bot-id]");
   if (button) send("removeBot", { botId: button.dataset.botId }, true);
 });
-byId("leaveLobbyBtn").addEventListener("click", leaveRoom);
-byId("leaveGameBtn").addEventListener("click", leaveRoom);
+byId("leaveLobbyBtn").addEventListener("click", requestLeaveConfirmation);
+byId("leaveGameBtn").addEventListener("click", requestLeaveConfirmation);
 byId("drawPile").addEventListener("click", () => send("drawCard", {}, true));
 byId("passTurnBtn").addEventListener("click", () => send("passTurn", {}, true));
 byId("unoBtn").addEventListener("click", () => send("declareUno", {}, true));
@@ -1159,12 +1219,40 @@ byId("closeChallengeRevealBtn").addEventListener("click", () => {
   byId("challengeRevealPanel").classList.add("hidden");
 });
 byId("playAgainBtn").addEventListener("click", () => send("playAgain", {}, true));
-byId("winnerLeaveBtn").addEventListener("click", leaveRoom);
+byId("winnerLeaveBtn").addEventListener("click", requestLeaveConfirmation);
+byId("cancelLeaveBtn").addEventListener("click", closeLeaveConfirmation);
+byId("confirmLeaveBtn").addEventListener("click", () => {
+  closeLeaveConfirmation();
+  leaveRoom();
+});
 function toggleMobilePanel(name) {
   document.body.dataset.mobilePanel = document.body.dataset.mobilePanel === name ? "" : name;
 }
 byId("mobileSeatsBtn").addEventListener("click", () => toggleMobilePanel("players"));
-byId("mobileTalkBtn").addEventListener("click", () => toggleMobilePanel("talk"));
+
+function selectGameAsidePanel(panelId) {
+  document.querySelectorAll(".game-aside-tab").forEach((tab) => {
+    const selected = tab.dataset.gameAsidePanel === panelId;
+    tab.classList.toggle("active", selected);
+    tab.setAttribute("aria-selected", String(selected));
+  });
+  document.querySelectorAll(".game-aside-panel").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.id !== panelId);
+  });
+}
+
+document.querySelectorAll(".game-aside-tab").forEach((tab) => {
+  tab.addEventListener("click", () => selectGameAsidePanel(tab.dataset.gameAsidePanel));
+});
+byId("mobileTalkBtn").addEventListener("click", () => {
+  selectGameAsidePanel("gameChatPanel");
+  if (window.matchMedia("(orientation: landscape) and (max-height: 520px)").matches) {
+    toggleMobilePanel("talk");
+  } else {
+    document.body.dataset.mobilePanel = "";
+    byId("gameChatInput").focus({ preventScroll: true });
+  }
+});
 
 document.querySelectorAll(".mode-option").forEach((button) => {
   button.addEventListener("click", () => send("setGameMode", { mode: button.dataset.mode }, true));
@@ -1278,6 +1366,7 @@ document.addEventListener("keydown", (event) => {
     byId("challengeRevealPanel").classList.add("hidden");
     byId("swapModal").classList.add("hidden");
     byId("tutorialModal").classList.add("hidden");
+    byId("leaveConfirmModal").classList.add("hidden");
     byId("audioSettingsPanel").classList.add("hidden");
     byId("audioSettingsBtn").setAttribute("aria-expanded", "false");
     document.body.dataset.mobilePanel = "";

@@ -7,7 +7,7 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - 2 to 6 active players per room and up to 12 spectators
 - Multiple simultaneous invite-code rooms
 - Live lobby, gameplay, turn updates, chat, joins, and disconnect status
-- Refresh-safe reconnect tokens stored in browser session storage
+- Refresh- and reopen-safe reconnect tokens stored in browser session and local storage until the player intentionally leaves
 - Standard 108-card UNO deck and seven-card opening hands
 - Number, Skip, Reverse, Draw Two, Wild, and Wild Draw Four cards
 - Classic mode with official no-stacking play and Wild Draw Four challenges
@@ -16,7 +16,7 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Two-player Reverse behavior, draw penalties, and skip behavior
 - Working UNO declaration and a live Catch UNO window with a two-card penalty
 - Official round scoring, a 500-point table leaderboard, and match history
-- Round winner screen with points, standings, Play Again, Leave, and a 10-second auto-rematch
+- Round winner screen with points, standings, Play Again, Leave Game, and a 10-second auto-rematch
 - SQLite room snapshots, match records, and player statistics
 - Player avatars, sound toggle, dark/light themes, responsive mobile UI
 - Distinct card, UNO, Catch UNO, and winner sounds with adjustable effects volume
@@ -29,6 +29,8 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Color symbols, high-contrast mode, reduced motion, and an interactive five-step tutorial
 - Basic peer-to-peer WebRTC voice chat with mute, deafen, speaking, and connection-quality indicators
 - Quick emoji reactions and table-wide chat popups
+- Always-visible compact chat on portrait mobile and a fixed Chat/Voice/Activity/Rules panel on desktop
+- Confirm-before-leaving flow; accidental refreshes, tab closes, and network drops preserve the player's seat and hand
 - Viewport-stable gameplay that preserves page and hand position after every live update
 - Locally bundled Socket.IO browser client with no runtime CDN dependency
 - Server-side input validation, message limits, duplicate-name prevention, and private hand projection
@@ -211,7 +213,7 @@ After deploying a new version, reload once online so the updated service worker 
 
 ## Voice Chat
 
-- Select **Talk > Join voice** on mobile, or **Join voice** in the desktop side panel.
+- Select **Voice > Join voice** in the communication panel. In short landscape mode, open **Chat** first and then select **Voice**.
 - Browser audio is sent directly between players with WebRTC; Render relays only connection-signaling messages.
 - Mute disables your microphone track. Deafen silences all remote tracks. Speaking rings and Good/Fair/Poor quality labels update live.
 - HTTPS and microphone permission are required. The included public STUN server is enough for typical networks. Very restrictive corporate/mobile NATs may require a TURN service later.

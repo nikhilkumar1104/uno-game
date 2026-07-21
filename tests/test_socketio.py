@@ -28,6 +28,11 @@ def test_index_bundles_socket_client_instead_of_external_cdn(tmp_path):
     service_worker = client.get("/sw.js")
     assert service_worker.status_code == 200
     assert service_worker.headers["Service-Worker-Allowed"] == "/"
+    assert b'uno-live-release-1-v2' in service_worker.data
+    assert '/static/style.css?v=6' in html
+    assert 'id="leaveConfirmModal"' in html
+    assert 'data-game-aside-panel="rulesPanel"' in html
+    assert "Play a 7 to choose a player and swap hands" in html
 
 
 def test_full_socket_flow_winner_persistence_reconnect_and_rematch(tmp_path):
@@ -76,8 +81,17 @@ def test_full_socket_flow_winner_persistence_reconnect_and_rematch(tmp_path):
     reconnected_host = socketio.test_client(app)
     reconnected_host.emit("rejoinRoom", {"roomCode": code, "playerId": host_player_id})
     reconnect_events = reconnected_host.get_received()
+    rejoined = next(
+        item["args"][0] for item in reconnect_events if item["name"] == "roomJoined"
+    )
     reconnect_state = next(
         item["args"][0] for item in reconnect_events if item["name"] == "gameState"
+    )
+    assert rejoined["rejoined"] is True
+    assert any(
+        item["name"] == "notification"
+        and "rejoined and can continue" in item["args"][0]["message"]
+        for item in reconnect_events
     )
     assert reconnect_state["hand"] == host_state["hand"]
 

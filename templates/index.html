@@ -9,7 +9,7 @@
   <title>UNO Live</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='5') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='6') }}">
 </head>
 <body data-initial-room="{{ initial_room_code }}">
   <div id="connectionBanner" class="connection-banner hidden" role="status">Reconnecting...</div>
@@ -141,9 +141,22 @@
     </div>
   </div>
 
+  <div id="leaveConfirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="leaveConfirmTitle" aria-describedby="leaveConfirmCopy">
+    <div class="modal-panel leave-confirm-panel">
+      <div class="leave-confirm-icon" aria-hidden="true">!</div>
+      <p class="kicker">Leave table</p>
+      <h2 id="leaveConfirmTitle">Are you sure you want to leave the game?</h2>
+      <p id="leaveConfirmCopy">Leaving intentionally removes your seat from this game. If your network drops or the page closes accidentally, do not leave—you can reconnect to the same hand automatically.</p>
+      <div class="leave-confirm-actions">
+        <button id="cancelLeaveBtn" class="secondary-button" type="button">Stay in game</button>
+        <button id="confirmLeaveBtn" class="danger-button" type="button">Leave game</button>
+      </div>
+    </div>
+  </div>
+
   <div id="remoteAudio" aria-hidden="true"></div>
 
   <script src="{{ url_for('static', filename='vendor/socket.io.min.js', v='4.8.3') }}"></script>
-  <script src="{{ url_for('static', filename='script.js', v='5') }}" defer></script>
+  <script src="{{ url_for('static', filename='script.js', v='6') }}" defer></script>
 </body>
 </html>
