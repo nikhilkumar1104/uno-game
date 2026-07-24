@@ -18,7 +18,7 @@ RULE_DEFAULTS = {
     "forced_play": False,
 }
 SCORE_TARGET = 500
-UNO_CATCH_GRACE_SECONDS = 2.0
+UNO_CATCH_GRACE_SECONDS = 1.0
 
 
 class GameRuleError(ValueError):
@@ -619,7 +619,7 @@ def catch_uno(room: dict[str, Any], catcher_id: str) -> str:
     if offender_id == catcher_id:
         raise GameRuleError("You cannot catch yourself. Call UNO instead.")
     if time.time() < float(room.get("uno_catch_available_at") or 0):
-        raise GameRuleError("Give the player 2 seconds to call UNO.")
+        raise GameRuleError("Give the player 1 second to call UNO.")
     catcher = next((p for p in active_players(room) if p["id"] == catcher_id), None)
     offender = next((p for p in active_players(room) if p["id"] == offender_id), None)
     if not catcher or not offender or offender["said_uno"] or len(offender["hand"]) != 1:

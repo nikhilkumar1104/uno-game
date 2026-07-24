@@ -121,13 +121,7 @@
           <span class="live-dot">Live</span>
         </div>
         <div id="gameChatMessages" class="chat-messages" aria-live="polite"></div>
-        <div class="quick-reactions" aria-label="Quick reactions">
-          <button data-reaction="😂" type="button" aria-label="Send laughing reaction">😂</button>
-          <button data-reaction="😡" type="button" aria-label="Send angry reaction">😡</button>
-          <button data-reaction="😱" type="button" aria-label="Send shocked reaction">😱</button>
-          <button data-reaction="🔥" type="button" aria-label="Send fire reaction">🔥</button>
-          <button data-reaction="👏" type="button" aria-label="Send applause reaction">👏</button>
-        </div>
+        <div class="quick-reactions" data-reaction-picker aria-label="Animated quick reactions"></div>
         <form id="gameChatForm" class="chat-form">
           <input id="gameChatInput" maxlength="240" placeholder="Write a message" aria-label="Game chat message">
           <button class="send-button" type="submit">Send</button>

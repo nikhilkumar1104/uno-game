@@ -3205,3 +3205,388 @@ body[data-view="game"] .audio-settings {
     height: 68svh;
   }
 }
+
+/* Animated table reactions: lightweight avatar stickers with no external assets. */
+.quick-reactions {
+  gap: 7px;
+  padding: 7px 1px 9px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.quick-reactions .reaction-option {
+  display: grid;
+  width: 68px;
+  height: 72px;
+  flex: 0 0 68px;
+  grid-template-rows: 46px auto;
+  place-items: center;
+  gap: 1px;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-2);
+  box-shadow: none;
+  scroll-snap-align: start;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.quick-reactions .reaction-option:not(:disabled):hover,
+.quick-reactions .reaction-option:not(:disabled):focus-visible {
+  border-color: var(--yellow);
+  background: var(--surface-3);
+  transform: translateY(-2px);
+}
+
+.reaction-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reaction-stage {
+  position: relative;
+  display: block;
+  width: 88px;
+  height: 64px;
+  flex: 0 0 auto;
+}
+
+.reaction-stage .reaction-character {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  width: 46px;
+  height: 46px;
+  border-width: 2px;
+  font-size: 12px;
+  transform-origin: center bottom;
+  will-change: transform;
+}
+
+.reaction-cue {
+  position: absolute;
+  z-index: 2;
+  top: 1px;
+  right: 2px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  font-size: 25px;
+  line-height: 1;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .38));
+  transform-origin: center;
+  will-change: transform;
+}
+
+.reaction-preview {
+  width: 58px;
+  height: 44px;
+}
+
+.reaction-preview .reaction-character {
+  left: 4px;
+  bottom: 2px;
+  width: 31px;
+  height: 31px;
+  border-width: 2px;
+  font-size: 8px;
+}
+
+.reaction-preview .reaction-cue {
+  top: 1px;
+  right: 1px;
+  width: 27px;
+  height: 27px;
+  font-size: 20px;
+}
+
+.reaction-message {
+  align-items: center;
+}
+
+.reaction-chat-bubble {
+  min-width: min(180px, 100%);
+  padding: 7px 9px 9px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--yellow) 42%, var(--line));
+  background: color-mix(in srgb, var(--surface-2) 82%, var(--yellow) 18%);
+}
+
+.reaction-sticker {
+  display: flex;
+  min-height: 70px;
+  align-items: center;
+  gap: 3px;
+}
+
+.reaction-caption {
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.reaction-funny .reaction-character {
+  animation: reaction-avatar-funny 1.35s ease-in-out infinite;
+}
+
+.reaction-angry .reaction-character {
+  animation: reaction-avatar-angry .72s ease-in-out infinite;
+}
+
+.reaction-sad .reaction-character {
+  animation: reaction-avatar-sad 1.7s ease-in-out infinite;
+}
+
+.reaction-hit .reaction-character {
+  animation: reaction-avatar-hit 1.15s cubic-bezier(.45, 0, .2, 1) infinite;
+}
+
+.reaction-win .reaction-character {
+  animation: reaction-avatar-win 1.4s ease-in-out infinite;
+}
+
+.reaction-shock .reaction-character {
+  animation: reaction-avatar-shock .38s linear infinite;
+}
+
+.reaction-cool .reaction-character {
+  animation: reaction-avatar-cool 1.8s ease-in-out infinite;
+}
+
+.reaction-gg .reaction-character {
+  animation: reaction-avatar-wave 1.25s ease-in-out infinite;
+}
+
+.reaction-lucky .reaction-character {
+  animation: reaction-avatar-lucky 1.5s ease-in-out infinite;
+}
+
+.reaction-comeon .reaction-character {
+  animation: reaction-avatar-comeon 1.8s ease-in-out infinite;
+}
+
+.reaction-funny .reaction-cue,
+.reaction-win .reaction-cue,
+.reaction-lucky .reaction-cue {
+  animation: reaction-cue-pop 1.35s ease-in-out infinite;
+}
+
+.reaction-angry .reaction-cue,
+.reaction-shock .reaction-cue {
+  animation: reaction-cue-shake .42s linear infinite;
+}
+
+.reaction-hit .reaction-cue {
+  animation: reaction-impact 1.15s ease-out infinite;
+}
+
+.reaction-sad .reaction-cue {
+  animation: reaction-cue-drop 1.7s ease-in-out infinite;
+}
+
+.reaction-gg .reaction-cue {
+  animation: reaction-cue-wave 1.25s ease-in-out infinite;
+}
+
+.action-popup.reaction {
+  overflow: hidden;
+}
+
+.action-popup.reaction-hit {
+  border-color: #ff8794;
+  background: #7c1d2b;
+}
+
+.action-popup.reaction-win,
+.action-popup.reaction-lucky {
+  border-color: var(--yellow);
+  background: #3a310d;
+}
+
+@keyframes reaction-avatar-funny {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  45% { transform: translateY(-8px) rotate(6deg) scale(1.06); }
+  65% { transform: translateY(-3px) rotate(-4deg); }
+}
+
+@keyframes reaction-avatar-angry {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  25% { transform: translateX(-3px) rotate(-5deg); }
+  50% { transform: translateY(3px) scaleY(.94); }
+  75% { transform: translateX(3px) rotate(5deg); }
+}
+
+@keyframes reaction-avatar-sad {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(5px) rotate(-6deg) scale(.96); }
+}
+
+@keyframes reaction-avatar-hit {
+  0%, 35%, 100% { transform: translateX(0) rotate(0); }
+  52% { transform: translateX(15px) rotate(10deg) scale(1.06); }
+  66% { transform: translateX(3px) rotate(-4deg); }
+}
+
+@keyframes reaction-avatar-win {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  35% { transform: translateY(-10px) rotate(8deg) scale(1.08); }
+  60% { transform: translateY(-4px) rotate(-7deg); }
+}
+
+@keyframes reaction-avatar-shock {
+  0%, 100% { transform: translateX(-2px) rotate(-2deg); }
+  50% { transform: translateX(2px) rotate(2deg); }
+}
+
+@keyframes reaction-avatar-cool {
+  0%, 100% { transform: rotate(-7deg) translateY(0); }
+  50% { transform: rotate(7deg) translateY(-3px); }
+}
+
+@keyframes reaction-avatar-wave {
+  0%, 100% { transform: rotate(0); }
+  30% { transform: rotate(-9deg) translateX(-2px); }
+  65% { transform: rotate(9deg) translateX(2px); }
+}
+
+@keyframes reaction-avatar-lucky {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-7px) scale(1.05); }
+}
+
+@keyframes reaction-avatar-comeon {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  45% { transform: translateY(3px) rotate(8deg); }
+  70% { transform: translateY(1px) rotate(-4deg); }
+}
+
+@keyframes reaction-cue-pop {
+  0%, 100% { transform: scale(.9) rotate(-5deg); }
+  45% { transform: scale(1.15) rotate(7deg); }
+}
+
+@keyframes reaction-cue-shake {
+  0%, 100% { transform: translateX(-1px) rotate(-4deg); }
+  50% { transform: translateX(2px) rotate(4deg); }
+}
+
+@keyframes reaction-impact {
+  0%, 38%, 100% { opacity: .45; transform: scale(.65) rotate(-8deg); }
+  54% { opacity: 1; transform: scale(1.25) rotate(8deg); }
+  72% { opacity: .8; transform: scale(.95); }
+}
+
+@keyframes reaction-cue-drop {
+  0%, 100% { transform: translateY(-2px) scale(.94); }
+  55% { transform: translateY(5px) scale(1.05); }
+}
+
+@keyframes reaction-cue-wave {
+  0%, 100% { transform: rotate(-12deg); }
+  50% { transform: rotate(15deg) scale(1.08); }
+}
+
+@media (max-width: 650px) and (orientation: portrait) {
+  .opponent-rail {
+    top: 7px;
+    height: 43px;
+    align-items: flex-start;
+  }
+
+  .opponent-chip {
+    min-width: 98px;
+    max-width: 132px;
+    height: 42px;
+    flex: 0 0 auto;
+    gap: 5px;
+    padding: 5px 7px;
+    overflow: hidden;
+  }
+
+  .opponent-chip .avatar {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 26px;
+    font-size: 7px;
+  }
+
+  .opponent-chip > div {
+    min-width: 0;
+  }
+
+  .opponent-chip .player-name,
+  .opponent-chip .player-note {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .table-status {
+    top: 61px;
+  }
+
+  .pile-row {
+    padding-top: 62px;
+  }
+
+  .game-chat .quick-reactions {
+    min-height: 79px;
+    padding-block: 5px 7px;
+  }
+
+  .game-chat {
+    min-height: max(390px, 60svh);
+    height: clamp(390px, 66svh, 620px);
+  }
+
+  .game-chat .quick-reactions .reaction-option {
+    width: 62px;
+    height: 67px;
+    flex-basis: 62px;
+    grid-template-rows: 43px auto;
+    padding: 3px;
+  }
+
+  .reaction-preview {
+    width: 53px;
+    height: 41px;
+  }
+
+  .reaction-preview .reaction-character {
+    width: 29px;
+    height: 29px;
+  }
+
+  .reaction-preview .reaction-cue {
+    width: 25px;
+    height: 25px;
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 380px) and (orientation: portrait) {
+  .table-status {
+    top: 59px;
+  }
+
+  .pile-row {
+    padding-top: 60px;
+  }
+}

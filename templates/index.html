@@ -9,7 +9,7 @@
   <title>UNO Live</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='8') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='9') }}">
 </head>
 <body data-initial-room="{{ initial_room_code }}" data-view="welcome" data-chat-focus="false">
   <div id="connectionBanner" class="connection-banner hidden" role="status">Reconnecting...</div>
@@ -157,6 +157,6 @@
   <div id="remoteAudio" aria-hidden="true"></div>
 
   <script src="{{ url_for('static', filename='vendor/socket.io.min.js', v='4.8.3') }}"></script>
-  <script src="{{ url_for('static', filename='script.js', v='8') }}" defer></script>
+  <script src="{{ url_for('static', filename='script.js', v='9') }}" defer></script>
 </body>
 </html>

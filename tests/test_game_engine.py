@@ -123,14 +123,14 @@ def test_catch_uno_adds_two_cards_during_open_window():
     assert room["uno_pending_player_id"] is None
 
 
-def test_catch_uno_waits_two_seconds_before_allowing_penalty():
+def test_catch_uno_waits_one_second_before_allowing_penalty():
     room = rig_playing_room()
     playable = make_card("red", "7")
     room["players"][0]["hand"] = [playable, make_card("blue", "9")]
     room["players"][1]["hand"] = [make_card("yellow", "1"), make_card("green", "4")]
     play_card(room, "p0", playable["id"])
 
-    with pytest.raises(GameRuleError, match="2 seconds"):
+    with pytest.raises(GameRuleError, match="1 second"):
         catch_uno(room, "p1")
 
     assert len(room["players"][0]["hand"]) == 1

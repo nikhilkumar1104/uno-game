@@ -78,6 +78,21 @@ const COLOR_HEX = {
 };
 
 const COLOR_SYMBOLS = { red: "◆", yellow: "●", green: "▲", blue: "■", wild: "✦" };
+const QUICK_REACTIONS = Object.freeze([
+  { kind: "funny", icon: "😂", label: "Funny", text: "😂 That was funny!" },
+  { kind: "angry", icon: "😡", label: "Angry", text: "😡 I am angry!" },
+  { kind: "sad", icon: "😭", label: "Sad", text: "😭 That hurts!" },
+  { kind: "hit", icon: "💥", label: "Take that", text: "💥 Take that!" },
+  { kind: "win", icon: "🏆", label: "I'll win", text: "🏆 I will win!" },
+  { kind: "shock", icon: "😱", label: "No way", text: "😱 No way!" },
+  { kind: "cool", icon: "😎", label: "Too easy", text: "😎 Too easy!" },
+  { kind: "gg", icon: "🤝", label: "Good game", text: "🤝 Good game!" },
+  { kind: "lucky", icon: "🍀", label: "Lucky", text: "🍀 Lucky move!" },
+  { kind: "comeon", icon: "🙄", label: "Come on", text: "🙄 Come on!" },
+]);
+const QUICK_REACTIONS_BY_TEXT = new Map(
+  QUICK_REACTIONS.map((reaction) => [reaction.text, reaction]),
+);
 const TUTORIAL_STEPS = [
   ["Match a card", "↔", "Play a card that matches the active color, number, or action symbol."],
   ["Use action cards", "+2", "Skip, Reverse, Draw Two, Wild, and Wild Draw Four can change the round instantly."],
@@ -157,12 +172,14 @@ function toast(message, error = false, withSound = true) {
 }
 
 let actionPopupTimer;
-function showActionPopup(type, message) {
+function showActionPopup(type, message, reaction = null) {
   const popup = byId("actionPopup");
   const titles = { uno: "UNO!", catch: "CAUGHT!", win: "ROUND WON!", chat: "TABLE TALK", reaction: "REACTION" };
-  byId("actionPopupTitle").textContent = titles[type] || "UNO!";
+  byId("actionPopupTitle").textContent = reaction
+    ? `${reaction.icon} ${reaction.label}`
+    : titles[type] || "UNO!";
   byId("actionPopupMessage").textContent = message || "Table action announced.";
-  popup.className = `action-popup ${type}`;
+  popup.className = `action-popup ${type}${reaction ? ` reaction-${reaction.kind}` : ""}`;
   window.clearTimeout(actionPopupTimer);
   actionPopupTimer = window.setTimeout(() => popup.classList.add("hidden"), type === "win" ? 3200 : 2200);
 }
@@ -266,6 +283,43 @@ function makeAvatar(player) {
   avatar.textContent = initials(player.username);
   avatar.setAttribute("aria-hidden", "true");
   return avatar;
+}
+
+function makeReactionStage(player, reaction, preview = false) {
+  const stage = document.createElement("span");
+  stage.className = `reaction-stage reaction-${reaction.kind}${preview ? " reaction-preview" : ""}`;
+  const character = makeAvatar(player);
+  character.classList.add("reaction-character");
+  const cue = document.createElement("span");
+  cue.className = "reaction-cue";
+  cue.textContent = reaction.icon;
+  cue.setAttribute("aria-hidden", "true");
+  stage.append(character, cue);
+  return stage;
+}
+
+function renderReactionPickers() {
+  const player = {
+    username: state.username || byId("usernameInput")?.value || "You",
+    avatar: state.avatar || byId("avatarInput")?.value || "ember",
+  };
+  document.querySelectorAll("[data-reaction-picker]").forEach((picker) => {
+    const buttons = QUICK_REACTIONS.map((reaction) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `reaction-option reaction-${reaction.kind}`;
+      button.dataset.reaction = reaction.text;
+      button.dataset.reactionKind = reaction.kind;
+      button.title = reaction.text;
+      button.setAttribute("aria-label", `Send ${reaction.label} animated reaction`);
+      const label = document.createElement("span");
+      label.className = "reaction-label";
+      label.textContent = reaction.label;
+      button.append(makeReactionStage(player, reaction, true), label);
+      return button;
+    });
+    picker.replaceChildren(...buttons);
+  });
 }
 
 function makeBadge(className, text) {
@@ -766,17 +820,28 @@ function showChallengeReveal(payload) {
 }
 
 function makeChatMessage(message) {
+  const reaction = QUICK_REACTIONS_BY_TEXT.get(message.text);
   const row = document.createElement("div");
-  row.className = "chat-message";
+  row.className = `chat-message${reaction ? " reaction-message" : ""}`;
   row.dataset.messageId = message.id;
   row.appendChild(makeAvatar(message));
   const bubble = document.createElement("div");
-  bubble.className = "chat-bubble";
+  bubble.className = `chat-bubble${reaction ? " reaction-chat-bubble" : ""}`;
   const author = document.createElement("strong");
   author.textContent = message.username;
-  const text = document.createElement("span");
-  text.textContent = message.text;
-  bubble.append(author, text);
+  if (reaction) {
+    const sticker = document.createElement("span");
+    sticker.className = `reaction-sticker reaction-${reaction.kind}`;
+    const caption = document.createElement("span");
+    caption.className = "reaction-caption";
+    caption.textContent = reaction.text.replace(`${reaction.icon} `, "");
+    sticker.append(makeReactionStage(message, reaction), caption);
+    bubble.append(author, sticker);
+  } else {
+    const text = document.createElement("span");
+    text.textContent = message.text;
+    bubble.append(author, text);
+  }
   row.appendChild(bubble);
   return row;
 }
@@ -811,8 +876,12 @@ function appendChat(message) {
     container.appendChild(makeChatMessage(message));
     if (stayAtBottom) container.scrollTop = container.scrollHeight;
   });
-  const emojiOnly = /^[\p{Extended_Pictographic}\u200d\ufe0f]+$/u.test(message.text);
-  showActionPopup(emojiOnly ? "reaction" : "chat", `${message.username}: ${message.text}`);
+  const reaction = QUICK_REACTIONS_BY_TEXT.get(message.text);
+  showActionPopup(
+    reaction ? "reaction" : "chat",
+    `${message.username}: ${reaction ? reaction.text.replace(`${reaction.icon} `, "") : message.text}`,
+    reaction,
+  );
   playSound("notice");
 }
 
@@ -874,6 +943,7 @@ function submitJoin(createRoom) {
   }
   state.username = username;
   state.avatar = avatar;
+  renderReactionPickers();
   const payload = { username, avatar };
   if (!createRoom) {
     const roomCode = byId("roomCodeInput").value.trim().toUpperCase();
@@ -1206,6 +1276,7 @@ function initializeSocket() {
     state.username = payload.username || state.username;
     state.avatar = payload.avatar || state.avatar;
     state.isHost = payload.isHost;
+    renderReactionPickers();
     persistSession();
     history.replaceState({}, "", `/room/${state.roomCode}`);
     if (payload.rejoined) toast("Seat restored. You can continue with the same hand.");
@@ -1256,6 +1327,7 @@ function initializeSocket() {
 byId("usernameInput").value = state.username;
 byId("avatarInput").value = state.avatar;
 byId("roomCodeInput").value = invitedRoomCode || state.roomCode;
+renderReactionPickers();
 
 byId("createRoomBtn").addEventListener("click", () => submitJoin(true));
 byId("joinForm").addEventListener("submit", (event) => {
@@ -1486,8 +1558,10 @@ wireChat("gameChatForm", "gameChatInput");
     window.setTimeout(() => { document.body.dataset.chatFocus = "false"; }, 120);
   });
 });
-document.querySelectorAll("button[data-reaction]").forEach((button) => {
-  button.addEventListener("click", () => send("chatMessage", { text: button.dataset.reaction }));
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-reaction]");
+  if (!button) return;
+  send("chatMessage", { text: button.dataset.reaction });
 });
 
 function toggleAudioSettings() {
