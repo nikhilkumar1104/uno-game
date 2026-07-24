@@ -1,12 +1,12 @@
 "use strict";
 
-const CACHE = "uno-live-release-1-v3";
+const CACHE = "uno-live-release-1-v4";
 const OFFLINE = "/static/offline.html";
 const APP_SHELL = [
   "/",
   OFFLINE,
-  "/static/style.css?v=7",
-  "/static/script.js?v=7",
+  "/static/style.css?v=8",
+  "/static/script.js?v=8",
   "/static/offline.css",
   "/static/offline.js",
   "/static/manifest.webmanifest",

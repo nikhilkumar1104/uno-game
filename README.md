@@ -14,7 +14,7 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Wild mode with same-type draw stacking only (`+2` on `+2`; `+4` on `+4`)
 - Draw-then-play or draw-then-pass flow
 - Two-player Reverse behavior, draw penalties, and skip behavior
-- Working UNO declaration and a live Catch UNO window with a two-card penalty
+- Working UNO declaration and a live Catch UNO window with a server-enforced two-second grace period and two-card penalty
 - Official round scoring, a 500-point table leaderboard, and match history
 - Round winner screen with points, standings, Play Again, Leave Game, and a 10-second auto-rematch
 - SQLite room snapshots, match records, and player statistics
@@ -29,7 +29,8 @@ UNO Live is a complete browser-based multiplayer UNO game built with Flask, Flas
 - Color symbols, high-contrast mode, reduced motion, and an interactive five-step tutorial
 - Basic peer-to-peer WebRTC voice chat with mute, deafen, speaking, and connection-quality indicators
 - Quick emoji reactions and table-wide chat popups
-- Always-visible compact chat on portrait mobile and a fixed Chat/Voice/Activity/Rules panel on desktop
+- Scroll-friendly portrait play area with a compact table and hand followed by a full-height chat history
+- Fixed Chat/Voice/Activity/Rules panel on desktop with height-aware cards for laptops and large monitors
 - Height-responsive desktop cards and separated status/pile lanes at normal browser zoom
 - Scroll-preserving mobile chat history with iPhone-safe input sizing and non-overlapping Settings controls
 - Confirm-before-leaving flow; refreshes, tab closes, network drops, and an active-game leave preserve a token-protected seat and hand
@@ -158,7 +159,7 @@ To test from phones or computers on the same Wi-Fi network, use the host compute
 3. On your turn, play a highlighted legal card or click the draw pile.
 4. After drawing a playable card, play that card or choose **Keep card and pass**.
 5. A Wild asks you to choose the next color.
-6. Click **UNO** when your hand reaches one card. Until the next player acts, another player can click **Catch UNO** and give you two cards.
+6. Click **UNO** when your hand reaches one card. Other players wait two seconds before **Catch UNO** becomes available. Until the next player acts, a valid catch gives you two cards.
 7. In Classic mode, the next player can accept a Wild Draw Four or challenge it. An illegal +4 gives the offender four cards; a failed challenge gives the challenger six.
 8. In Wild mode, draw cards can be stacked using the combinations shown in the lobby. Drawing takes the complete accumulated penalty and ends the turn.
 9. The first player to empty their hand wins the round and receives the point value of every opponent card. Everyone is queued into the next round after 10 seconds unless they leave.

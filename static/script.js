@@ -41,6 +41,7 @@ const state = {
   rejoinPending: false,
   actionPending: false,
   countdownTimer: null,
+  catchCountdownTimer: null,
   previousWinnerId: null,
   lastNotificationMessage: "",
   colorSymbols: localStorage.getItem("uno.colorSymbols") !== "off",
@@ -570,6 +571,38 @@ function startRematchCountdown(deadline) {
   state.countdownTimer = window.setInterval(update, 250);
 }
 
+function renderCatchButton(game, winner) {
+  const button = byId("catchUnoBtn");
+  window.clearInterval(state.catchCountdownTimer);
+  state.catchCountdownTimer = null;
+
+  if (!game.catchableUnoPlayer || winner) {
+    button.classList.add("hidden");
+    button.disabled = true;
+    button.textContent = "Catch UNO";
+    return;
+  }
+
+  const availableAt = Date.now() + Number(game.catchUnoAvailableInMs || 0);
+  const update = () => {
+    const remaining = Math.max(0, availableAt - Date.now());
+    button.classList.remove("hidden");
+    button.disabled = remaining > 0;
+    button.textContent = remaining > 0
+      ? `Catch in ${Math.max(1, Math.ceil(remaining / 1000))}s`
+      : `Catch ${game.catchableUnoPlayer.username}`;
+    if (remaining <= 0 && state.catchCountdownTimer) {
+      window.clearInterval(state.catchCountdownTimer);
+      state.catchCountdownTimer = null;
+    }
+  };
+
+  update();
+  if (availableAt > Date.now()) {
+    state.catchCountdownTimer = window.setInterval(update, 100);
+  }
+}
+
 function renderGame(game) {
   const preserveViewport = !views.game.classList.contains("hidden");
   const viewportTop = window.scrollY;
@@ -667,11 +700,7 @@ function renderGame(game) {
   byId("passTurnBtn").disabled = !myTurn || !game.canPass || Boolean(winner) || Boolean(challenge);
   byId("unoBtn").disabled = !me || me.spectator || game.hand.length !== 1 || me.saidUno || Boolean(winner);
   byId("unoBtn").classList.toggle("attention", Boolean(game.mustDeclareUno));
-  const catchButton = byId("catchUnoBtn");
-  catchButton.classList.toggle("hidden", !game.catchableUnoPlayer || Boolean(winner));
-  catchButton.textContent = game.catchableUnoPlayer
-    ? `Catch ${game.catchableUnoPlayer.username}`
-    : "Catch UNO";
+  renderCatchButton(game, winner);
   byId("spectatorNotice").classList.toggle("hidden", !me?.spectator);
 
   const winnerPanel = byId("winnerPanel");
@@ -1424,7 +1453,11 @@ document.addEventListener("keydown", (event) => {
     byId("drawPile").click();
   } else if (event.key.toLowerCase() === "u" && !byId("unoBtn").disabled) {
     byId("unoBtn").click();
-  } else if (event.key.toLowerCase() === "c" && !byId("catchUnoBtn").classList.contains("hidden")) {
+  } else if (
+    event.key.toLowerCase() === "c"
+    && !byId("catchUnoBtn").classList.contains("hidden")
+    && !byId("catchUnoBtn").disabled
+  ) {
     byId("catchUnoBtn").click();
   } else if (event.key.toLowerCase() === "v") {
     joinVoice();

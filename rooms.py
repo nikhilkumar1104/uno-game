@@ -72,6 +72,7 @@ class RoomManager:
             "rematch_choices": {},
             "rematch_deadline": None,
             "voice_members": {},
+            "uno_catch_available_at": None,
         }
         for key, value in defaults.items():
             room.setdefault(key, value)
@@ -218,6 +219,7 @@ class RoomManager:
                 "events": [],
                 "move_count": 0,
                 "uno_pending_player_id": None,
+                "uno_catch_available_at": None,
                 "drawn_card_id": None,
                 "drawn_by_id": None,
                 "pending_draw": 0,

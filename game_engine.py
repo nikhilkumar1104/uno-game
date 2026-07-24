@@ -18,6 +18,7 @@ RULE_DEFAULTS = {
     "forced_play": False,
 }
 SCORE_TARGET = 500
+UNO_CATCH_GRACE_SECONDS = 2.0
 
 
 class GameRuleError(ValueError):
@@ -156,6 +157,7 @@ def _log(room: dict[str, Any], message: str) -> None:
 
 def _close_uno_window(room: dict[str, Any]) -> None:
     room["uno_pending_player_id"] = None
+    room["uno_catch_available_at"] = None
 
 
 def _leaderboard_row(room: dict[str, Any], player: dict[str, Any]) -> dict[str, Any]:
@@ -239,6 +241,7 @@ def start_game(room: dict[str, Any]) -> None:
             "events": [],
             "move_count": 0,
             "uno_pending_player_id": None,
+            "uno_catch_available_at": None,
             "drawn_card_id": None,
             "drawn_by_id": None,
             "pending_draw": 0,
@@ -323,7 +326,7 @@ def _finish_round(room: dict[str, Any], player: dict[str, Any]) -> None:
         if (team_total if team_mode else row["points"]) >= SCORE_TARGET
         else None
     )
-    room["uno_pending_player_id"] = None
+    _close_uno_window(room)
     room["pending_draw"] = 0
     room["pending_draw_type"] = None
     room["wild4_challenge"] = None
@@ -530,6 +533,7 @@ def play_card(
     _apply_seven_zero(room, player, card, target_player_id)
     if len(player["hand"]) == 1:
         room["uno_pending_player_id"] = player["id"]
+        room["uno_catch_available_at"] = time.time() + UNO_CATCH_GRACE_SECONDS
         _log(room, f"{player['username']} has one card and must call UNO.")
 
     if room.get("mode", "classic") == "wild":
@@ -601,7 +605,7 @@ def declare_uno(room: dict[str, Any], player_id: str) -> bool:
         return False
     player["said_uno"] = True
     if room.get("uno_pending_player_id") == player_id:
-        room["uno_pending_player_id"] = None
+        _close_uno_window(room)
     _log(room, f"{player['username']} declared UNO!")
     return True
 
@@ -614,13 +618,15 @@ def catch_uno(room: dict[str, Any], catcher_id: str) -> str:
         raise GameRuleError("There is nobody to catch right now.")
     if offender_id == catcher_id:
         raise GameRuleError("You cannot catch yourself. Call UNO instead.")
+    if time.time() < float(room.get("uno_catch_available_at") or 0):
+        raise GameRuleError("Give the player 2 seconds to call UNO.")
     catcher = next((p for p in active_players(room) if p["id"] == catcher_id), None)
     offender = next((p for p in active_players(room) if p["id"] == offender_id), None)
     if not catcher or not offender or offender["said_uno"] or len(offender["hand"]) != 1:
-        room["uno_pending_player_id"] = None
+        _close_uno_window(room)
         raise GameRuleError("The UNO catch window has closed.")
     _draw_many(room, offender, 2)
-    room["uno_pending_player_id"] = None
+    _close_uno_window(room)
     _log(room, f"{catcher['username']} caught {offender['username']}; 2 penalty cards were drawn.")
     return offender["username"]
 
@@ -808,6 +814,20 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
         "canPass": room.get("drawn_by_id") == viewer_id and not challenge,
         "mustDeclareUno": pending_uno_id == viewer_id,
         "catchableUnoPlayer": catchable,
+        "catchUnoAvailableInMs": (
+            max(
+                0,
+                int(
+                    (
+                        float(room.get("uno_catch_available_at") or 0)
+                        - time.time()
+                    )
+                    * 1000
+                ),
+            )
+            if catchable
+            else None
+        ),
         "events": room.get("events", [])[-35:],
         "chat": room.get("chat", [])[-60:],
         "leaderboard": leaderboard,

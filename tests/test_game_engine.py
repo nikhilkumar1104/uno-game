@@ -1,4 +1,5 @@
 import random
+import time
 
 import pytest
 
@@ -67,6 +68,7 @@ def rig_playing_room(mode="classic"):
             "events": [],
             "move_count": 0,
             "uno_pending_player_id": None,
+            "uno_catch_available_at": None,
             "drawn_card_id": None,
             "drawn_by_id": None,
             "pending_draw": 0,
@@ -115,9 +117,24 @@ def test_catch_uno_adds_two_cards_during_open_window():
     room["players"][1]["hand"] = [make_card("yellow", "1"), make_card("green", "4")]
     play_card(room, "p0", playable["id"])
     assert room["uno_pending_player_id"] == "p0"
+    room["uno_catch_available_at"] = time.time() - 1
     catch_uno(room, "p1")
     assert len(room["players"][0]["hand"]) == 3
     assert room["uno_pending_player_id"] is None
+
+
+def test_catch_uno_waits_two_seconds_before_allowing_penalty():
+    room = rig_playing_room()
+    playable = make_card("red", "7")
+    room["players"][0]["hand"] = [playable, make_card("blue", "9")]
+    room["players"][1]["hand"] = [make_card("yellow", "1"), make_card("green", "4")]
+    play_card(room, "p0", playable["id"])
+
+    with pytest.raises(GameRuleError, match="2 seconds"):
+        catch_uno(room, "p1")
+
+    assert len(room["players"][0]["hand"]) == 1
+    assert room["uno_pending_player_id"] == "p0"
 
 
 def test_uno_catch_window_closes_when_next_action_begins():
@@ -144,6 +161,7 @@ def test_rejected_action_does_not_close_uno_catch_window():
         play_card(room, "p1", blocked["id"])
 
     assert room["uno_pending_player_id"] == "p0"
+    room["uno_catch_available_at"] = time.time() - 1
     catch_uno(room, "p1")
     assert len(room["players"][0]["hand"]) == 3
 

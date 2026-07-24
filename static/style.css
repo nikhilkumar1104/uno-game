@@ -2848,3 +2848,360 @@ body[data-view="game"] .audio-settings {
     padding-top: 64px;
   }
 }
+
+/* Release 1.1: stable table sizing and a natural portrait scroll flow. */
+@media (min-width: 901px) {
+  .screen.game-view {
+    width: min(1760px, 100%);
+    padding: clamp(10px, 1.5vh, 18px) clamp(14px, 2vw, 30px);
+  }
+
+  .game-header {
+    min-height: clamp(50px, 7vh, 64px);
+    margin-bottom: clamp(6px, 1vh, 10px);
+  }
+
+  .game-layout {
+    grid-template-columns:
+      clamp(170px, 13vw, 220px)
+      minmax(430px, 1fr)
+      clamp(240px, 18vw, 300px);
+    gap: clamp(8px, 1vw, 14px);
+  }
+
+  .table-column {
+    grid-template-rows: minmax(225px, 1fr) auto clamp(104px, 17dvh, 128px);
+  }
+
+  .table-surface {
+    border-width: clamp(6px, 1vh, 10px);
+  }
+
+  .draw-pile,
+  .table-surface > .pile-row .uno-card,
+  .discard-pile {
+    width: clamp(70px, 10.5dvh, 86px);
+    height: clamp(105px, 15.75dvh, 129px);
+  }
+
+  .player-hand {
+    height: clamp(104px, 17dvh, 128px);
+    padding-block: 8px 6px;
+  }
+
+  .player-hand .uno-card {
+    flex-basis: clamp(62px, 8.8dvh, 72px);
+    width: clamp(62px, 8.8dvh, 72px);
+    height: clamp(93px, 13.2dvh, 108px);
+  }
+
+  .opponent-rail {
+    top: clamp(8px, 1.4vh, 14px);
+  }
+
+  .table-status {
+    top: clamp(68px, 10.5vh, 86px);
+  }
+
+  .pile-row {
+    padding-top: clamp(54px, 8.5vh, 70px);
+  }
+
+  .game-chat .chat-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (min-width: 901px) and (max-height: 720px) {
+  .game-header .compact-brand {
+    transform: scale(.88);
+    transform-origin: left center;
+  }
+
+  .game-header h1 {
+    font-size: 19px;
+  }
+
+  .game-player-list {
+    margin-block: 8px 10px;
+  }
+
+  .hand-toolbar {
+    min-height: 48px;
+    padding-block: 4px;
+  }
+
+  .hand-toolbar .kicker {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) and (orientation: portrait) {
+  body[data-view="game"] {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .screen.game-view {
+    display: block;
+    width: 100%;
+    min-height: 100svh;
+    height: auto;
+    padding: max(7px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(14px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+    overflow: visible;
+  }
+
+  .game-header {
+    min-height: 50px;
+    margin-bottom: 7px;
+  }
+
+  .game-layout {
+    display: grid;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    gap: 12px;
+    overflow: visible;
+  }
+
+  .table-column {
+    display: grid;
+    height: auto;
+    grid-template-rows: auto auto auto;
+    overflow: visible;
+  }
+
+  .table-surface {
+    width: 100%;
+    min-height: 250px;
+    height: clamp(250px, 43svh, 365px);
+    border-width: 5px;
+  }
+
+  .hand-toolbar {
+    min-height: 56px;
+    padding: 6px 2px 4px;
+  }
+
+  .player-hand {
+    min-height: 108px;
+    height: clamp(108px, 19svh, 150px);
+    padding: 7px 2px 8px;
+  }
+
+  .game-aside {
+    position: static;
+    display: grid;
+    width: 100%;
+    min-height: clamp(340px, 58svh, 560px);
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 7px;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .game-aside-panel {
+    min-height: 0;
+    height: auto;
+  }
+
+  .game-chat {
+    min-height: clamp(330px, 58svh, 560px);
+    height: clamp(330px, 64svh, 620px);
+    grid-template-rows: auto minmax(180px, 1fr) auto auto;
+    overflow: hidden;
+  }
+
+  .game-chat .chat-messages {
+    min-height: 180px;
+    overflow-y: auto;
+  }
+
+  .game-chat .chat-form {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .game-chat .chat-form input {
+    min-width: 0;
+    font-size: 16px;
+  }
+
+  .game-chat .chat-form button {
+    min-width: 64px;
+  }
+
+  #mobileTalkBtn {
+    display: none;
+  }
+}
+
+@media (max-width: 650px) and (orientation: portrait) {
+  .game-room-meta {
+    gap: 6px;
+  }
+
+  .compact-brand {
+    padding-right: 8px;
+  }
+
+  .compact-brand span:last-child {
+    display: none;
+  }
+
+  .brand-uno {
+    min-width: 52px;
+    min-height: 30px;
+    border-width: 2px;
+    font-size: 14px;
+  }
+
+  .game-header .header-actions {
+    gap: 3px;
+  }
+
+  .game-header .header-actions button {
+    min-height: 34px;
+    padding: 5px 7px;
+    font-size: 9px;
+  }
+
+  .table-surface {
+    min-height: 255px;
+    height: clamp(255px, 42svh, 330px);
+  }
+
+  .opponent-rail {
+    top: 7px;
+  }
+
+  .table-status {
+    top: 57px;
+    gap: 5px;
+  }
+
+  .turn-pill,
+  .color-status {
+    padding: 4px 7px;
+    font-size: 10px;
+  }
+
+  .pile-row {
+    gap: clamp(25px, 12vw, 42px);
+    padding-top: 54px;
+  }
+
+  .draw-pile,
+  .table-surface > .pile-row .uno-card,
+  .discard-pile {
+    width: clamp(60px, 20vw, 70px);
+    height: clamp(90px, 30vw, 105px);
+  }
+
+  .hand-toolbar {
+    display: grid;
+    min-height: 58px;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .hand-toolbar > div:first-child {
+    min-width: 60px;
+  }
+
+  .turn-actions {
+    display: flex;
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 5px;
+  }
+
+  .turn-actions button {
+    min-width: 0;
+    min-height: 38px;
+    padding: 5px 7px;
+    font-size: 9px;
+    line-height: 1.15;
+  }
+
+  .turn-actions #passTurnBtn {
+    flex: 1 1 92px;
+  }
+
+  .turn-actions #catchUnoBtn {
+    flex: 1 1 88px;
+  }
+
+  .turn-actions #unoBtn {
+    min-width: 70px;
+    flex: 0 0 70px;
+  }
+
+  .player-hand {
+    min-height: 102px;
+    height: clamp(102px, 17svh, 126px);
+    gap: 6px;
+  }
+
+  .player-hand .uno-card {
+    flex-basis: 62px;
+    width: 62px;
+    height: 93px;
+  }
+
+  .game-aside {
+    min-height: max(360px, 58svh);
+  }
+
+  .game-chat {
+    min-height: max(350px, 58svh);
+    height: min(620px, 66svh);
+    padding: 11px;
+  }
+
+  .game-chat .chat-heading {
+    display: flex;
+  }
+
+  .game-chat .chat-heading h2 {
+    font-size: 16px;
+  }
+
+  .game-chat .chat-messages {
+    min-height: 190px;
+    padding-top: 8px;
+  }
+
+  .game-chat .quick-reactions {
+    min-height: 37px;
+  }
+
+  .game-chat .chat-form button {
+    min-width: 58px;
+    padding-inline: 9px;
+  }
+}
+
+@media (max-width: 380px) and (orientation: portrait) {
+  .game-header h1 {
+    font-size: 14px;
+  }
+
+  .table-surface {
+    min-height: 245px;
+    height: 40svh;
+  }
+
+  .game-chat {
+    height: 68svh;
+  }
+}
