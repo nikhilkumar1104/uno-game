@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import time
 from collections import Counter
 from typing import Any
 
@@ -133,7 +134,11 @@ def perform_bot_turn(
 
     offender_id = room.get("uno_pending_player_id")
     catch_chance = {"easy": 0.25, "medium": 0.7, "hard": 0.95}.get(difficulty, 0.7)
-    if offender_id and offender_id != player["id"] and rng.random() < catch_chance:
+    if (
+        offender_id and offender_id != player["id"]
+        and time.time() >= float(room.get("uno_catch_available_at") or 0)
+        and rng.random() < catch_chance
+    ):
         offender_name = catch_uno(room, player["id"])
         return {
             "message": f"{player['username']} caught {offender_name}. Two-card penalty!",

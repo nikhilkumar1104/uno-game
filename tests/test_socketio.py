@@ -28,9 +28,9 @@ def test_index_bundles_socket_client_instead_of_external_cdn(tmp_path):
     service_worker = client.get("/sw.js")
     assert service_worker.status_code == 200
     assert service_worker.headers["Service-Worker-Allowed"] == "/"
-    assert b'uno-live-release-1-v5' in service_worker.data
-    assert '/static/style.css?v=9' in html
-    assert '/static/script.js?v=9' in html
+    assert b'uno-live-release-1-v6' in service_worker.data
+    assert '/static/style.css?v=10' in html
+    assert '/static/script.js?v=10' in html
     assert 'data-reaction-picker' in html
     assert 'id="leaveConfirmModal"' in html
     assert 'data-game-aside-panel="rulesPanel"' in html
@@ -81,7 +81,7 @@ def test_full_socket_flow_winner_persistence_reconnect_and_rematch(tmp_path):
     host.disconnect()
     guest.get_received()
     reconnected_host = socketio.test_client(app)
-    reconnected_host.emit("rejoinRoom", {"roomCode": code, "playerId": host_player_id})
+    reconnected_host.emit("rejoinRoom", {"roomCode": code, "recoveryToken": joined["recoveryToken"]})
     reconnect_events = reconnected_host.get_received()
     rejoined = next(
         item["args"][0] for item in reconnect_events if item["name"] == "roomJoined"
@@ -178,7 +178,7 @@ def test_join_button_can_recover_a_disconnected_reserved_seat(tmp_path):
             "roomCode": code,
             "username": "Returning Player",
             "avatar": "ember",
-            "playerId": host_joined["playerId"],
+            "recoveryToken": host_joined["recoveryToken"],
         },
     )
     events = replacement.get_received()
@@ -196,7 +196,7 @@ def test_join_button_can_recover_a_disconnected_reserved_seat(tmp_path):
     returned_after_leave = socketio.test_client(app)
     returned_after_leave.emit(
         "rejoinRoom",
-        {"roomCode": code, "playerId": host_joined["playerId"]},
+        {"roomCode": code, "recoveryToken": host_joined["recoveryToken"]},
     )
     post_leave_events = returned_after_leave.get_received()
     post_leave_join = next(
@@ -388,3 +388,72 @@ def test_room_options_bot_profiles_and_voice_signaling(tmp_path):
 
     host.disconnect()
     guest.disconnect()
+
+
+def test_public_ids_cannot_recover_seats_and_tokens_stay_private(tmp_path):
+    import json
+    app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': f"sqlite:///{tmp_path / 'security.sqlite3'}"})
+    host = socketio.test_client(app)
+    guest = socketio.test_client(app)
+    host.emit('createRoom', {'username': 'Host'})
+    host_joined = received_payload(host, 'roomJoined')
+    code = host_joined['roomCode']
+    token = host_joined['recoveryToken']
+    public_id = host_joined['playerId']
+    assert token != public_id
+    guest.emit('joinRoom', {'roomCode': code, 'username': 'Guest'})
+    guest_events = guest.get_received()
+    guest_joined = next(e['args'][0] for e in guest_events if e['name'] == 'roomJoined')
+    assert token not in json.dumps(guest_events)
+    assert guest_joined['recoveryToken'] != token
+    host.get_received()
+    host.emit('startGame', {'roomCode': code})
+    original_hand = received_payload(host, 'gameState')['hand']
+    assert token not in json.dumps(guest.get_received())
+    attacker = socketio.test_client(app)
+    for payload in ({'playerId': public_id}, {'recoveryToken': public_id}, {'recoveryToken': 'wrong'}, {}):
+        attacker.emit('rejoinRoom', {'roomCode': code, **payload})
+        events = attacker.get_received()
+        assert any(e['name'] == 'sessionExpired' for e in events)
+        assert not any(e['name'] == 'roomJoined' for e in events)
+    for payload in ({'playerId': public_id}, {'recoveryToken': public_id}, {'recoveryToken': 'wrong'}):
+        attacker.emit('joinRoom', {'roomCode': code, 'username': 'Host', **payload})
+        assert any(e['name'] == 'errorMessage' for e in attacker.get_received())
+    # A seated socket cannot orphan its own seat by switching identities.
+    guest.emit('rejoinRoom', {'roomCode': code, 'recoveryToken': token})
+    assert any(e['name'] == 'sessionExpired' for e in guest.get_received())
+    manager = app.extensions['room_manager']
+    guest_seat = next(p for p in manager.rooms[code]['players'] if p['id'] == guest_joined['playerId'])
+    assert manager.room_for_sid(guest_seat['socket_id'])[1]['id'] == guest_joined['playerId']
+    # Correct token restores the original seat and hand, including after restart.
+    host.disconnect()
+    restored_app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': app.config['SQLALCHEMY_DATABASE_URI']})
+    replacement = socketio.test_client(restored_app)
+    replacement.emit('rejoinRoom', {'roomCode': code, 'recoveryToken': token})
+    events = replacement.get_received()
+    joined = next(e['args'][0] for e in events if e['name'] == 'roomJoined')
+    assert joined['playerId'] == public_id
+    assert joined['recoveryToken'] == token
+    assert next(e['args'][0] for e in events if e['name'] == 'gameState')['hand'] == original_hand
+    replacement.disconnect()
+
+
+def test_bot_scheduler_waits_until_uno_catch_grace_expires(tmp_path, monkeypatch):
+    app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': f"sqlite:///{tmp_path / 'bot-grace.sqlite3'}"})
+    manager = app.extensions['room_manager']
+    room, human = manager.create_room('human', 'Human', 'ember')
+    bot = manager.add_bot(room, human['id'])
+    from game_engine import start_game
+    start_game(room)
+    room['current_index'] = 1
+    room['uno_pending_player_id'] = human['id']
+    room['uno_catch_available_at'] = 101.0
+    monkeypatch.setattr('app.time.time', lambda: 100.0)
+    tasks = []
+    monkeypatch.setattr(socketio, 'start_background_task', lambda *args: tasks.append(args))
+    with app.app_context():
+        _schedule_bot_turn(room)
+        _schedule_bot_turn(room)
+    assert len(tasks) == 1
+    assert tasks[0][-1] == 1.0
+    assert room['players'][1] == bot

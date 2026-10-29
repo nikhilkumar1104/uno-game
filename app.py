@@ -253,17 +253,19 @@ def _schedule_bot_turn(room: dict[str, Any]) -> None:
         if not _bot_action_needed(room) or room.get("_bot_task_scheduled"):
             return
         room["_bot_task_scheduled"] = True
+        delay = max(0.8, float(room.get("uno_catch_available_at") or 0) - time.time())
         app_object = current_app._get_current_object()
         socketio.start_background_task(
             _bot_turn_worker,
             app_object,
             room["code"],
             room.get("game_id"),
+            delay,
         )
 
 
-def _bot_turn_worker(app_object: Flask, room_code: str, game_id: str | None) -> None:
-    socketio.sleep(0.8)
+def _bot_turn_worker(app_object: Flask, room_code: str, game_id: str | None, delay: float = 0.8) -> None:
+    socketio.sleep(delay)
     with app_object.app_context():
         manager = _manager()
         room: dict[str, Any] | None = None
@@ -370,6 +372,7 @@ def handle_create_room(data: dict[str, Any] | None) -> None:
             {
                 "roomCode": room["code"],
                 "playerId": player["id"],
+                "recoveryToken": player["recovery_token"],
                 "username": player["username"],
                 "avatar": player["avatar"],
                 "isHost": True,
@@ -390,7 +393,7 @@ def handle_join_room(data: dict[str, Any] | None) -> None:
             payload.get("roomCode"),
             payload.get("username"),
             payload.get("avatar"),
-            payload.get("playerId"),
+            payload.get("recoveryToken"),
         )
         socket_join_room(room["code"])
         _persist(room)
@@ -399,6 +402,7 @@ def handle_join_room(data: dict[str, Any] | None) -> None:
             {
                 "roomCode": room["code"],
                 "playerId": player["id"],
+                "recoveryToken": player["recovery_token"],
                 "username": player["username"],
                 "avatar": player["avatar"],
                 "isHost": player["id"] == room["host_id"],
@@ -429,7 +433,7 @@ def handle_rejoin_room(data: dict[str, Any] | None) -> None:
     try:
         payload = data or {}
         room, player = _manager().rejoin_room(
-            request.sid, payload.get("roomCode"), payload.get("playerId")
+            request.sid, payload.get("roomCode"), payload.get("recoveryToken")
         )
         socket_join_room(room["code"])
         _persist(room)
@@ -438,6 +442,7 @@ def handle_rejoin_room(data: dict[str, Any] | None) -> None:
             {
                 "roomCode": room["code"],
                 "playerId": player["id"],
+                "recoveryToken": player["recovery_token"],
                 "username": player["username"],
                 "avatar": player["avatar"],
                 "isHost": player["id"] == room["host_id"],
