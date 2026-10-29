@@ -496,6 +496,23 @@ function makeUnoCard(card, playable = false, interactive = false) {
   const value = document.createElement("span");
   value.className = "uno-card-value";
   value.textContent = cardLabel(card);
+  if (card.value === "skip" || card.value === "reverse") {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 32 32");
+    svg.setAttribute("class", "card-action-icon");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", card.value === "skip"
+      ? "M25 7 7 25 M29 16a13 13 0 1 1-26 0 13 13 0 0 1 26 0"
+      : "M5 12h21l-7-7 M27 20H6l7 7");
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "3.5");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(path);
+    value.replaceChildren(svg);
+  }
   const bottom = document.createElement("span");
   bottom.className = "uno-card-corner bottom";
   bottom.dataset.label = cardLabel(card);
@@ -662,6 +679,7 @@ function renderCatchButton(game, winner) {
 }
 
 function renderGame(game) {
+  const previousDiscardId = state.game?.topDiscard?.id;
   const preserveViewport = !views.game.classList.contains("hidden");
   const viewportTop = window.scrollY;
   const previousHandScroll = byId("playerHand").scrollLeft;
@@ -676,6 +694,7 @@ function renderGame(game) {
   const me = game.players.find((player) => player.id === state.playerId);
   const current = game.players.find((player) => player.id === game.currentPlayerId);
   const myTurn = game.status === "playing" && game.currentPlayerId === state.playerId && !me?.spectator;
+  document.querySelector(".table-surface").dataset.turn = myTurn ? "you" : "other";
   const winner = game.winner;
   const challenge = game.wild4Challenge;
 
@@ -733,7 +752,11 @@ function renderGame(game) {
   );
 
   const discard = byId("discardPile");
-  discard.replaceChildren(...(game.topDiscard ? [makeUnoCard(game.topDiscard)] : []));
+  const topCard = game.topDiscard ? makeUnoCard(game.topDiscard) : null;
+  if (topCard && previousDiscardId && previousDiscardId !== game.topDiscard.id) {
+    topCard.classList.add("landed");
+  }
+  discard.replaceChildren(...(topCard ? [topCard] : []));
   const playable = new Set(game.playableCardIds);
   byId("playerHand").replaceChildren(
     ...game.hand.map((card) => makeUnoCard(card, playable.has(card.id), true)),
