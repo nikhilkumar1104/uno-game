@@ -310,6 +310,14 @@ For durable SQLite data, create a Railway volume, mount it at `/data`, and add `
 - Set `ALLOWED_ORIGINS` to exact HTTPS origins in production. The default `*` exists only to make first deployment straightforward.
 - Run behind HTTPS in production. Render and Railway provide TLS on their public domains.
 - Invite codes identify rooms; reconnect tokens identify seats. Reconnect tokens are random, long, and never shown in the UI.
+- Public `playerId` values are identifiers only. Seat recovery requires a separate secret `recoveryToken`, returned only in the owner's `roomJoined` acknowledgement and stored per room in the browser. Never include it in shared state, chat, or voice messages.
+- **Security upgrade:** seats saved before separate recovery tokens were introduced cannot be recovered using their old public IDs. After deploying this update, reload the app and create fresh rooms. New tokens survive subsequent restarts when SQLite storage is persistent.
+
+### Gameplay fixes
+
+- Bots wait for the one-second Catch UNO grace period and can continue their turn if a catch is not yet available.
+- A final Draw Two or Wild Draw Four applies the draw penalty before scoring. In Wild mode, this includes the full outstanding same-type stack; stacking ends when a player empties their hand.
+- With Forced Play and Seven-O enabled together, drawing a playable 7 opens the target picker. Choose another player to complete the required play; drawing again or passing is blocked. Computers choose their target automatically.
 
 ## Socket Events
 

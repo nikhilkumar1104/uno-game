@@ -102,3 +102,55 @@ def test_computer_does_not_bluff_illegal_wild_four_in_classic_mode():
 
     perform_bot_turn(room, random.Random(4))
     assert room["discard_pile"][-1]["id"] == matching_color["id"]
+
+
+class CatchEveryTime(random.Random):
+    def random(self):
+        return 0.0
+
+
+def test_bot_continues_turn_if_uno_grace_has_not_expired(monkeypatch):
+    room = bot_room()
+    room['players'][0]['hand'] = [make_card('blue', '2')]
+    playable = make_card('red', '9')
+    room['players'][1]['hand'] = [playable, make_card('blue', '4')]
+    room['uno_pending_player_id'] = 'human'
+    room['uno_catch_available_at'] = 101.0
+    monkeypatch.setattr('bot_player.time.time', lambda: 100.8)
+    result = perform_bot_turn(room, CatchEveryTime())
+    assert result['effects'] == ['play', 'uno']
+    assert room['discard_pile'][-1] == playable
+    assert len(room['players'][0]['hand']) == 1
+    assert room['current_index'] == 0
+
+
+def test_bot_can_catch_at_grace_deadline_then_complete_turn(monkeypatch):
+    room = bot_room()
+    room['players'][0]['hand'] = [make_card('blue', '2')]
+    playable = make_card('red', '9')
+    room['players'][1]['hand'] = [playable, make_card('blue', '4')]
+    room['uno_pending_player_id'] = 'human'
+    room['uno_catch_available_at'] = 101.0
+    monkeypatch.setattr('bot_player.time.time', lambda: 101.0)
+    result = perform_bot_turn(room, CatchEveryTime())
+    assert result['effects'] == ['catch']
+    assert len(room['players'][0]['hand']) == 3
+    result = perform_bot_turn(room, CatchEveryTime())
+    assert 'play' in result['effects']
+    assert room['current_index'] == 0
+
+
+def test_bot_forced_drawn_seven_selects_swap_target():
+    room = bot_room()
+    room['rules'] = {'seven_zero': True, 'forced_play': True}
+    original = [make_card('blue', '2')]
+    human_hand = room['players'][0]['hand'].copy()
+    room['players'][1]['hand'] = original.copy()
+    seven = make_card('red', '7')
+    room['draw_pile'] = [seven]
+    result = perform_bot_turn(room, random.Random(2))
+    assert 'play' in result['effects']
+    assert room['discard_pile'][-1] == seven
+    assert room['players'][1]['hand'] == human_hand
+    assert room['players'][0]['hand'] == original
+    assert room['current_index'] == 0

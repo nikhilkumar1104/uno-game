@@ -528,6 +528,16 @@ def play_card(
         _log(room, f"{player['username']} jumped in with an exact match!")
 
     if not player["hand"]:
+        # Draw penalties count toward the round score, including the complete
+        # outstanding stack in Wild mode. A final +4 is necessarily legal.
+        if card["value"] in ("draw2", "wild4"):
+            penalty = (2 if card["value"] == "draw2" else 4) + room.get("pending_draw", 0)
+            advance_turn(room)
+            ensure_connected_turn(room)
+            target = current_player(room)
+            if target:
+                _draw_many(room, target, penalty)
+                _log(room, f"{target['username']} drew {penalty} cards before round scoring.")
         _finish_round(room, player)
         return
     _apply_seven_zero(room, player, card, target_player_id)
@@ -568,6 +578,11 @@ def draw_card(room: dict[str, Any], player_id: str) -> None:
         room["drawn_by_id"] = player_id
         room["drawn_card_id"] = card["id"]
         if _rule_enabled(room, "forced_play"):
+            if _rule_enabled(room, "seven_zero") and card["value"] == "7":
+                # Keep only this drawn card playable until its owner chooses
+                # the mandatory swap target. Bots use the same target flow.
+                _log(room, f"{player['username']} must choose a player for the drawn 7.")
+                return
             chosen_color = (
                 _best_forced_color(
                     [item for item in player["hand"] if item["id"] != card["id"]]
@@ -586,6 +601,8 @@ def pass_turn(room: dict[str, Any], player_id: str) -> None:
     player = _require_turn(room, player_id)
     if room.get("drawn_by_id") != player_id:
         raise GameRuleError("You may pass only after drawing a playable card.")
+    if _rule_enabled(room, "forced_play"):
+        raise GameRuleError("Forced Play requires playing the drawn card. Choose a swap target for a 7.")
     _close_uno_window(room)
     _log(room, f"{player['username']} kept the drawn card and passed.")
     advance_turn(room)
@@ -811,7 +828,13 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
         ],
         "hand": [] if not viewer or viewer["spectator"] else viewer["hand"],
         "playableCardIds": playable_ids,
-        "canPass": room.get("drawn_by_id") == viewer_id and not challenge,
+        "canPass": room.get("drawn_by_id") == viewer_id and not challenge and not _rule_enabled(room, "forced_play"),
+        "mustChooseSwapTarget": (
+            room.get("drawn_by_id") == viewer_id
+            and _rule_enabled(room, "forced_play")
+            and _rule_enabled(room, "seven_zero")
+            and not challenge
+        ),
         "mustDeclareUno": pending_uno_id == viewer_id,
         "catchableUnoPlayer": catchable,
         "catchUnoAvailableInMs": (

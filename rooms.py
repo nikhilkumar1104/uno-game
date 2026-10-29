@@ -88,6 +88,10 @@ class RoomManager:
         room["_bot_task_scheduled"] = False
         for player in room.get("players", []):
             player.setdefault("is_bot", False)
+            # Old public IDs were exposed to every participant. Never accept
+            # them as credentials when restoring a pre-token snapshot.
+            if not player.get("is_bot"):
+                player.setdefault("recovery_token", secrets.token_urlsafe(32))
             player.setdefault("team", None)
             if player.get("is_bot"):
                 player.setdefault("bot_difficulty", "medium")
@@ -109,6 +113,7 @@ class RoomManager:
     ) -> dict[str, Any]:
         return {
             "id": secrets.token_urlsafe(24),
+            "recovery_token": secrets.token_urlsafe(32),
             "username": username,
             "avatar": avatar,
             "socket_id": sid,
@@ -238,7 +243,7 @@ class RoomManager:
             return room, player
 
     def join_room(
-        self, sid: str, room_code: Any, username: Any, avatar: Any, player_id: Any = None
+        self, sid: str, room_code: Any, username: Any, avatar: Any, recovery_token: Any = None
     ) -> tuple[dict[str, Any], dict[str, Any], bool]:
         with self.lock:
             self._require_unseated_socket(sid)
@@ -251,13 +256,13 @@ class RoomManager:
                 (player for player in room["players"] if player["username"].casefold() == name.casefold()),
                 None,
             )
-            recovery_token = str(player_id or "")
+            token = str(recovery_token or "")
             if existing:
                 valid_recovery = (
-                    recovery_token
-                    and secrets.compare_digest(existing["id"], recovery_token)
-                    and (not existing.get("left") or room["status"] == "playing")
+                    token
                     and not existing.get("is_bot")
+                    and secrets.compare_digest(existing["recovery_token"], token)
+                    and (not existing.get("left") or room["status"] == "playing")
                 )
                 if not valid_recovery:
                     raise GameRuleError(
@@ -285,20 +290,30 @@ class RoomManager:
             self.sid_to_player[sid] = (code, player["id"])
             return room, player, False
 
-    def rejoin_room(self, sid: str, room_code: Any, player_id: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    def rejoin_room(self, sid: str, room_code: Any, recovery_token: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         with self.lock:
             code = str(room_code or "").strip().upper()
             room = self.rooms.get(code)
             if not room:
                 raise GameRuleError("That room has expired.")
-            token = str(player_id or "")
-            player = next((seat for seat in room["players"] if seat["id"] == token), None)
+            token = str(recovery_token or "")
+            player = next(
+                (
+                    seat for seat in room["players"]
+                    if token and seat.get("recovery_token")
+                    and secrets.compare_digest(seat["recovery_token"], token)
+                ),
+                None,
+            )
             if (
                 not player
                 or player.get("is_bot")
                 or (player.get("left") and room["status"] != "playing")
             ):
                 raise GameRuleError("Your saved seat is no longer available.")
+            identity = self.sid_to_player.get(sid)
+            if identity and identity != (code, player["id"]):
+                raise GameRuleError("Leave your current room before joining another one.")
             old_sid = player.get("socket_id")
             if old_sid:
                 self.sid_to_player.pop(old_sid, None)

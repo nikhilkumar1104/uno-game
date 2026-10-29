@@ -367,3 +367,74 @@ def test_public_state_hides_hands_and_exposes_only_viewer_actions():
     assert state["hand"] == [red, blue]
     assert state["playableCardIds"] == [red["id"]]
     assert "hand" not in state["players"][1]
+
+
+@pytest.mark.parametrize('mode,value,stack', [
+    ('classic', 'draw2', 0), ('classic', 'wild4', 0),
+    ('wild', 'draw2', 0), ('wild', 'wild4', 0),
+    ('wild', 'draw2', 4), ('wild', 'wild4', 8),
+])
+def test_final_draw_card_collects_penalty_before_scoring(mode, value, stack):
+    room = rig_playing_room(mode)
+    final = make_card('wild' if value == 'wild4' else 'red', value)
+    room['players'][0]['hand'] = [final]
+    room['players'][1]['hand'] = [make_card('blue', '5')]
+    room['pending_draw'] = stack
+    room['pending_draw_type'] = value if stack else None
+    play_card(room, 'p0', final['id'], 'blue' if value == 'wild4' else None)
+    penalty = stack + (4 if value == 'wild4' else 2)
+    assert room['status'] == 'finished'
+    assert len(room['players'][1]['hand']) == 1 + penalty
+    assert room['winner']['points'] == 5 + 3 * penalty
+    assert room['leaderboard']['p0']['points'] == room['winner']['points']
+    assert room['wild4_challenge'] is None
+    assert room['pending_draw'] == 0
+
+
+def test_forced_drawn_seven_waits_for_target_and_cannot_be_passed():
+    from game_engine import pass_turn
+    room = rig_playing_room()
+    room['rules'] = {'seven_zero': True, 'forced_play': True}
+    original_hand = [make_card('blue', '2')]
+    target_hand = [make_card('green', '9'), make_card('blue', '4')]
+    seven = make_card('red', '7')
+    room['players'][0]['hand'] = original_hand.copy()
+    room['players'][1]['hand'] = target_hand.copy()
+    room['draw_pile'] = [seven]
+
+    draw_card(room, 'p0')
+    state = public_state(room, 'p0')
+    assert state['mustChooseSwapTarget'] is True
+    assert state['canPass'] is False
+    assert state['playableCardIds'] == [seven['id']]
+    assert public_state(room, 'p1')['mustChooseSwapTarget'] is False
+    with pytest.raises(GameRuleError, match='Forced Play'):
+        pass_turn(room, 'p0')
+    with pytest.raises(GameRuleError, match='already drew'):
+        draw_card(room, 'p0')
+    with pytest.raises(GameRuleError, match='Choose another player'):
+        play_card(room, 'p0', seven['id'], target_player_id='missing')
+    assert room['drawn_card_id'] == seven['id']
+    play_card(room, 'p0', seven['id'], target_player_id='p1')
+    assert room['players'][0]['hand'] == target_hand
+    assert room['players'][1]['hand'] == original_hand
+    assert room['current_index'] == 1
+    assert public_state(room, 'p0')['mustChooseSwapTarget'] is False
+
+
+def test_final_draw_penalty_is_included_in_team_score():
+    room = room_with_players(4)
+    set_room_options(room, 'teams', {})
+    start_game(room)
+    final = make_card('red', 'draw2')
+    room['players'][0]['hand'] = [final]
+    room['players'][1]['hand'] = [make_card('blue', '5')]
+    room['players'][2]['hand'] = [make_card('wild', 'wild')]
+    room['players'][3]['hand'] = [make_card('green', '4')]
+    room['draw_pile'] = [make_card('yellow', '3'), make_card('yellow', '3')]
+    room['discard_pile'] = [make_card('red', '1')]
+    room['current_color'] = 'red'
+    play_card(room, 'p0', final['id'])
+    assert room['winner']['points'] == 15  # 5 + 4 + the two drawn 3s
+    assert room['team_scores']['0'] == 15
+    assert room['leaderboard']['p2']['points'] == 15

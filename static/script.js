@@ -13,8 +13,8 @@ const storedRoomCode = sessionStorage.getItem("uno.roomCode")
   || localStorage.getItem("uno.activeRoomCode")
   || "";
 const initialRoomCode = invitedRoomCode || storedRoomCode;
-const roomRecoveryPlayerId = initialRoomCode
-  ? localStorage.getItem(`uno.rejoin.${initialRoomCode}`) || ""
+const roomRecoveryToken = initialRoomCode
+  ? localStorage.getItem(`uno.recovery.${initialRoomCode}`) || ""
   : "";
 const storedPlayerId = sessionStorage.getItem("uno.playerId")
   || localStorage.getItem("uno.activePlayerId")
@@ -23,7 +23,8 @@ const storedPlayerId = sessionStorage.getItem("uno.playerId")
 const state = {
   socket: null,
   roomCode: initialRoomCode,
-  playerId: roomRecoveryPlayerId || (initialRoomCode === storedRoomCode ? storedPlayerId : ""),
+  playerId: initialRoomCode === storedRoomCode ? storedPlayerId : "",
+  recoveryToken: roomRecoveryToken,
   username: sessionStorage.getItem("uno.username") || localStorage.getItem("uno.activeUsername") || "",
   avatar: sessionStorage.getItem("uno.avatar") || localStorage.getItem("uno.activeAvatar") || "ember",
   isHost: false,
@@ -121,8 +122,9 @@ function persistSession() {
   localStorage.setItem("uno.activePlayerId", state.playerId);
   localStorage.setItem("uno.activeUsername", state.username);
   localStorage.setItem("uno.activeAvatar", state.avatar);
-  if (state.roomCode && state.playerId) {
-    localStorage.setItem(`uno.rejoin.${state.roomCode}`, state.playerId);
+  if (state.roomCode && state.recoveryToken) {
+    localStorage.setItem(`uno.recovery.${state.roomCode}`, state.recoveryToken);
+    localStorage.removeItem(`uno.rejoin.${state.roomCode}`);
   }
 }
 
@@ -135,8 +137,10 @@ function clearSession({ keepRecovery = false } = {}) {
     localStorage.removeItem(key);
   });
   if (roomCode && !keepRecovery) localStorage.removeItem(`uno.rejoin.${roomCode}`);
+  if (roomCode && !keepRecovery) localStorage.removeItem(`uno.recovery.${roomCode}`);
   state.roomCode = "";
   state.playerId = "";
+  state.recoveryToken = "";
   state.game = null;
   state.isHost = false;
   state.rejoinPending = false;
@@ -750,7 +754,7 @@ function renderGame(game) {
     byId("challengeWild4Btn").disabled = !challenge.canRespond;
   }
 
-  byId("drawPile").disabled = !myTurn || game.canPass || Boolean(winner) || Boolean(challenge);
+  byId("drawPile").disabled = !myTurn || game.canPass || game.mustChooseSwapTarget || Boolean(winner) || Boolean(challenge);
   byId("passTurnBtn").disabled = !myTurn || !game.canPass || Boolean(winner) || Boolean(challenge);
   byId("unoBtn").disabled = !me || me.spectator || game.hand.length !== 1 || me.saidUno || Boolean(winner);
   byId("unoBtn").classList.toggle("attention", Boolean(game.mustDeclareUno));
@@ -801,6 +805,11 @@ function renderGame(game) {
   renderActiveRules(game);
   renderChat(game.chat || []);
   renderVoiceParticipants();
+  if (myTurn && game.mustChooseSwapTarget) {
+    byId("turnStatus").textContent = "Choose a player to swap hands with";
+    const drawnCard = game.hand.find((card) => game.playableCardIds.includes(card.id));
+    if (drawnCard && state.selectedSwapCardId !== drawnCard.id) requestCardPlay(drawnCard);
+  }
   if (preserveViewport) {
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: viewportTop, behavior: "auto" });
@@ -952,15 +961,15 @@ function submitJoin(createRoom) {
       return;
     }
     payload.roomCode = roomCode;
-    const recoveryPlayerId = localStorage.getItem(`uno.rejoin.${roomCode}`)
-      || (state.roomCode === roomCode ? state.playerId : "");
-    if (recoveryPlayerId) {
+    const recoveryToken = localStorage.getItem(`uno.recovery.${roomCode}`)
+      || (state.roomCode === roomCode ? state.recoveryToken : "");
+    if (recoveryToken) {
       state.roomCode = roomCode;
-      state.playerId = recoveryPlayerId;
+      state.recoveryToken = recoveryToken;
       state.rejoinPending = true;
       setBusy(true);
       byId("welcomeStatus").textContent = "Rejoining your reserved seat...";
-      state.socket.emit("rejoinRoom", { roomCode, playerId: recoveryPlayerId });
+      state.socket.emit("rejoinRoom", { roomCode, recoveryToken });
       return;
     }
   }
@@ -1256,11 +1265,11 @@ function initializeSocket() {
   state.socket = io({ transports: ["websocket", "polling"], reconnection: true });
   state.socket.on("connect", () => {
     byId("connectionBanner").classList.add("hidden");
-    if (state.roomCode && state.playerId) {
+    if (state.roomCode && state.recoveryToken) {
       state.rejoinPending = true;
       setBusy(true);
       byId("welcomeStatus").textContent = "Rejoining your reserved seat...";
-      state.socket.emit("rejoinRoom", { roomCode: state.roomCode, playerId: state.playerId });
+      state.socket.emit("rejoinRoom", { roomCode: state.roomCode, recoveryToken: state.recoveryToken });
     }
   });
   state.socket.on("disconnect", () => {
@@ -1273,6 +1282,7 @@ function initializeSocket() {
     state.rejoinPending = false;
     state.roomCode = payload.roomCode;
     state.playerId = payload.playerId;
+    state.recoveryToken = payload.recoveryToken;
     state.username = payload.username || state.username;
     state.avatar = payload.avatar || state.avatar;
     state.isHost = payload.isHost;
