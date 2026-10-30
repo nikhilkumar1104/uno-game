@@ -14,6 +14,7 @@ from flask_socketio import SocketIO, emit, join_room as socket_join_room, leave_
 from bot_player import perform_bot_turn
 from game_engine import (
     GameRuleError,
+    ensure_connected_turn,
     accept_wild4,
     catch_uno,
     challenge_wild4,
@@ -33,6 +34,7 @@ from game_engine import (
 )
 from models import db, delete_room, ensure_schema, load_rooms, record_match, save_room
 from rooms import RoomManager
+from profiles import create_profile, resolve_profile, update_profile, profile_payload
 
 
 socketio = SocketIO(async_mode="threading", logger=False, engineio_logger=False)
@@ -81,6 +83,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         db.create_all()
         ensure_schema()
         manager.restore(load_rooms())
+        for restored_room in manager.rooms.values():
+            for restored_player in restored_room["players"]:
+                if restored_player.get("reconnect_deadline"):
+                    _schedule_reconnect_timeout(restored_room, restored_player)
 
     @app.get("/")
     def index() -> str:
@@ -207,7 +213,7 @@ def _with_player_action(
             finished_transition = was_playing and room["status"] == "finished"
             if finished_transition:
                 try:
-                    record_match(room)
+                    _record_and_notify_profiles(room)
                 except Exception:
                     db.session.rollback()
                     current_app.logger.exception("Match history persistence failed")
@@ -289,7 +295,7 @@ def _bot_turn_worker(app_object: Flask, room_code: str, game_id: str | None, del
             finished_transition = was_playing and room["status"] == "finished"
             if finished_transition:
                 try:
-                    record_match(room)
+                    _record_and_notify_profiles(room)
                 except Exception:
                     db.session.rollback()
                     current_app.logger.exception("Computer match persistence failed")
@@ -310,6 +316,109 @@ def _bot_turn_worker(app_object: Flask, room_code: str, game_id: str | None, del
             _schedule_rematch(room)
         elif room and room["status"] == "playing":
             _schedule_bot_turn(room)
+
+
+def _record_and_notify_profiles(room: dict[str, Any]) -> None:
+    if not record_match(room):
+        return
+    for player in room["players"]:
+        if player.get("profile_id") and player.get("socket_id") and player["connected"]:
+            from profiles import PlayerProfile
+            profile = db.session.get(PlayerProfile, player["profile_id"])
+            if profile:
+                socketio.emit("profileUpdated", profile_payload(profile), to=player["socket_id"])
+
+
+def _schedule_reconnect_timeout(room: dict[str, Any], player: dict[str, Any]) -> None:
+    if current_app.config.get("TESTING"):
+        return
+    socketio.start_background_task(
+        _reconnect_timeout, current_app._get_current_object(), room["code"],
+        player["id"], player["reconnect_deadline"],
+    )
+
+
+def _reconnect_timeout(app_object: Flask, room_code: str, player_id: str, deadline: float) -> None:
+    socketio.sleep(max(0, deadline - time.time()))
+    with app_object.app_context():
+        manager = _manager()
+        with manager.lock:
+            room = manager.rooms.get(room_code)
+            player = next((p for p in room["players"] if p["id"] == player_id), None) if room else None
+            if not player or player["connected"] or player.get("reconnect_deadline") != deadline:
+                return
+            if time.time() < deadline:
+                _schedule_reconnect_timeout(room, player)
+                return
+            player["reconnect_deadline"] = None
+            if room["status"] == "playing":
+                ensure_connected_turn(room)
+            manager._transfer_host_if_needed(room)
+            _persist(room)
+            _send_state(room)
+        if room["status"] == "playing":
+            _schedule_bot_turn(room)
+
+
+@socketio.on("ensureProfile")
+def handle_ensure_profile(data=None) -> None:
+    try:
+        payload = data or {}
+        token = payload.get("profileToken")
+        if token:
+            profile = resolve_profile(token)
+        else:
+            profile, token = create_profile(payload.get("displayName") or "Player", payload.get("avatar"))
+        emit("profileSession", {"profileToken": token, "profile": profile_payload(profile)})
+    except GameRuleError as exc:
+        emit("profileExpired", {"message": str(exc)})
+    except Exception as exc:
+        db.session.rollback()
+        _error(exc)
+
+
+@socketio.on("updateProfile")
+def handle_update_profile(data=None) -> None:
+    try:
+        payload = data or {}
+        profile = resolve_profile(payload.get("profileToken"))
+        update_profile(profile, payload)
+        emit("profileUpdated", profile_payload(profile))
+        emit("profileSaved")
+    except Exception as exc:
+        db.session.rollback()
+        _error(exc)
+
+
+@socketio.on("getProfile")
+def handle_get_profile(data=None) -> None:
+    try:
+        profile = resolve_profile((data or {}).get("profileToken"))
+        emit("profileUpdated", profile_payload(profile))
+    except Exception as exc:
+        _error(exc)
+
+
+@socketio.on("bindProfile")
+def handle_bind_profile(data=None) -> None:
+    """Attach a browser profile to its own pre-upgrade recovered seat."""
+    try:
+        payload = data or {}
+        profile = resolve_profile(payload.get("profileToken"))
+        manager = _manager()
+        with manager.lock:
+            room, player = manager.room_for_sid(request.sid, payload.get("roomCode"))
+            if player.get("profile_id"):
+                if player["profile_id"] != profile.id:
+                    raise GameRuleError("This seat belongs to a different saved profile.")
+                return
+            if any(p.get("profile_id") == profile.id and p["id"] != player["id"] for p in room["players"]):
+                raise GameRuleError("This profile already has a seat here.")
+            player["profile_id"] = profile.id
+            profile.display_name, profile.avatar = player["username"], player["avatar"]
+            _persist(room)
+    except Exception as exc:
+        _error(exc)
 
 
 def _schedule_rematch(room: dict[str, Any]) -> None:
@@ -362,9 +471,12 @@ def _rematch_timeout(app_object: Flask, room_code: str, game_id: str) -> None:
 def handle_create_room(data: dict[str, Any] | None) -> None:
     try:
         payload = data or {}
+        profile = resolve_profile(payload["profileToken"]) if payload.get("profileToken") else None
         room, player = _manager().create_room(
-            request.sid, payload.get("username"), payload.get("avatar")
+            request.sid, payload.get("username"), payload.get("avatar"), profile.id if profile else None
         )
+        if profile:
+            profile.display_name, profile.avatar = player["username"], player["avatar"]
         socket_join_room(room["code"])
         _persist(room)
         emit(
@@ -388,13 +500,17 @@ def handle_create_room(data: dict[str, Any] | None) -> None:
 def handle_join_room(data: dict[str, Any] | None) -> None:
     try:
         payload = data or {}
+        profile = resolve_profile(payload["profileToken"]) if payload.get("profileToken") else None
         room, player, rejoined = _manager().join_room(
             request.sid,
             payload.get("roomCode"),
             payload.get("username"),
             payload.get("avatar"),
             payload.get("recoveryToken"),
+            profile.id if profile else None,
         )
+        if profile and not rejoined:
+            profile.display_name, profile.avatar = player["username"], player["avatar"]
         socket_join_room(room["code"])
         _persist(room)
         emit(
@@ -757,6 +873,10 @@ def handle_disconnect() -> None:
         _remove_voice_member(room_before, player_id)
     room = _manager().disconnect(request.sid)
     if room:
+        if player_id:
+            disconnected_player = next((p for p in room["players"] if p["id"] == player_id), None)
+            if disconnected_player and disconnected_player.get("reconnect_deadline"):
+                _schedule_reconnect_timeout(room, disconnected_player)
         _persist(room)
         _send_state(room)
         if room["status"] == "playing":

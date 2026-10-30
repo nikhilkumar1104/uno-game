@@ -19,6 +19,7 @@ RULE_DEFAULTS = {
 }
 SCORE_TARGET = 500
 UNO_CATCH_GRACE_SECONDS = 1.0
+RECONNECT_GRACE_SECONDS = 30
 
 
 class GameRuleError(ValueError):
@@ -78,7 +79,31 @@ def ensure_connected_turn(room: dict[str, Any]) -> None:
         player = current_player(room)
         if player and player["connected"]:
             return
+        if player and float(player.get("reconnect_deadline") or 0) > time.time() and not player.get("left"):
+            return
+        if player and (room.get("wild4_challenge") or {}).get("target_id") == player["id"]:
+            accept_wild4(room, player["id"])
+            return
+        if player and room.get("pending_draw"):
+            _draw_many(room, player, room["pending_draw"])
+            room["pending_draw"] = 0
+            room["pending_draw_type"] = None
         advance_turn(room)
+
+
+def reconnect_wait(room: dict[str, Any]) -> dict[str, Any] | None:
+    if room.get("status") != "playing":
+        return None
+    player = current_player(room)
+    deadline = float(player.get("reconnect_deadline") or 0) if player else 0
+    if player and not player["connected"] and not player.get("left") and deadline > time.time():
+        return {"playerId": player["id"], "username": player["username"], "deadline": deadline}
+    return None
+
+
+def _record_round_action(room: dict[str, Any], player_id: str, metric: str) -> None:
+    stats = room.setdefault("round_stats", {}).setdefault(player_id, {})
+    stats[metric] = stats.get(metric, 0) + 1
 
 
 def _reshuffle_discard(room: dict[str, Any]) -> None:
@@ -230,6 +255,7 @@ def start_game(room: dict[str, Any]) -> None:
         {
             "status": "playing",
             "game_id": uuid.uuid4().hex,
+            "round_stats": {},
             "round_number": room.get("round_number", 0) + 1,
             "draw_pile": create_deck(),
             "discard_pile": [],
@@ -366,6 +392,8 @@ def _jump_in_player(
 ) -> dict[str, Any] | None:
     """Return a valid out-of-turn jumper and move the turn marker to that seat."""
     if not _rule_enabled(room, "jump_in") or not card:
+        return None
+    if reconnect_wait(room):
         return None
     if room.get("wild4_challenge") or room.get("pending_draw") or room.get("drawn_by_id"):
         return None
@@ -621,6 +649,7 @@ def declare_uno(room: dict[str, Any], player_id: str) -> bool:
     if player["said_uno"]:
         return False
     player["said_uno"] = True
+    _record_round_action(room, player_id, "uno_calls")
     if room.get("uno_pending_player_id") == player_id:
         _close_uno_window(room)
     _log(room, f"{player['username']} declared UNO!")
@@ -643,6 +672,7 @@ def catch_uno(room: dict[str, Any], catcher_id: str) -> str:
         _close_uno_window(room)
         raise GameRuleError("The UNO catch window has closed.")
     _draw_many(room, offender, 2)
+    _record_round_action(room, catcher_id, "catches")
     _close_uno_window(room)
     _log(room, f"{catcher['username']} caught {offender['username']}; 2 penalty cards were drawn.")
     return offender["username"]
@@ -691,6 +721,7 @@ def challenge_wild4(room: dict[str, Any], player_id: str) -> bool:
         ensure_connected_turn(room)
         return False
     _draw_many(room, offender, 4)
+    _record_round_action(room, player_id, "challenges")
     result = f"Challenge succeeded: {offender['username']} held the active color and drew 4."
     room["last_challenge_result"] = result
     _log(room, result)
@@ -744,7 +775,7 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
     top_card = room["discard_pile"][-1] if room.get("discard_pile") else None
     challenge = room.get("wild4_challenge")
     playable_ids: list[str] = []
-    if viewer and turn and not viewer["spectator"] and not challenge:
+    if viewer and turn and not viewer["spectator"] and not challenge and not reconnect_wait(room):
         if viewer["id"] == turn["id"]:
             if room.get("drawn_by_id") == viewer_id:
                 playable_ids = [room["drawn_card_id"]]
@@ -800,6 +831,8 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
         "teamScores": room.get("team_scores", {"0": 0, "1": 0}),
         "scoreTarget": SCORE_TARGET,
         "roundNumber": room.get("round_number", 0),
+        "reconnectWait": reconnect_wait(room),
+        "serverTime": time.time(),
         "hostId": room["host_id"],
         "currentPlayerId": turn["id"] if turn else None,
         "currentColor": room.get("current_color"),
@@ -816,6 +849,7 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
                 "avatar": player["avatar"],
                 "isHost": player["id"] == room["host_id"],
                 "connected": player["connected"],
+                "reconnectDeadline": player.get("reconnect_deadline"),
                 "spectator": player["spectator"],
                 "cardCount": len(player["hand"]),
                 "saidUno": player["said_uno"],

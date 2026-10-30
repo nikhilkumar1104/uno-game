@@ -40,6 +40,11 @@
 
     <section class="table-column">
       <div class="table-surface">
+        <div id="reconnectNotice" class="reconnect-notice hidden" role="status" aria-live="polite">
+          <p class="kicker">Connection interrupted</p><h2>Waiting for <span id="reconnectPlayer">player</span></h2>
+          <strong class="reconnect-clock"><span id="reconnectSeconds">30</span><small>seconds to return</small></strong>
+          <p>Turn continues when they return, or after the countdown.</p>
+        </div>
         <div id="opponentRail" class="opponent-rail"></div>
         <div class="table-status">
           <span id="turnPill" class="turn-pill">Waiting</span>

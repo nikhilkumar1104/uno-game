@@ -1,5 +1,10 @@
 "use strict";
 
+const savedTableTheme = localStorage.getItem('uno.tableTheme');
+const savedCardBack = localStorage.getItem('uno.cardBack');
+document.documentElement.dataset.tableTheme = ['emerald', 'ocean', 'midnight', 'plum'].includes(savedTableTheme) ? savedTableTheme : 'emerald';
+document.documentElement.dataset.cardBack = ['classic', 'aurora', 'carbon', 'royal'].includes(savedCardBack) ? savedCardBack : 'classic';
+
 const COLORS = ["red", "yellow", "green", "blue"];
 const LABELS = { skip: "SKIP", reverse: "REV", draw2: "+2", wild: "WILD", wild4: "+4" };
 const $ = (id) => document.getElementById(id);
