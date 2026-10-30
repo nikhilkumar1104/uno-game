@@ -129,6 +129,8 @@ function persistSession() {
 }
 
 function clearSession({ keepRecovery = false } = {}) {
+  window.clearInterval(reconnectTimer);
+  byId("reconnectNotice").classList.add("hidden");
   const roomCode = state.roomCode;
   ["uno.roomCode", "uno.playerId", "uno.username", "uno.avatar"].forEach((key) => {
     sessionStorage.removeItem(key);
@@ -693,7 +695,7 @@ function renderGame(game) {
 
   const me = game.players.find((player) => player.id === state.playerId);
   const current = game.players.find((player) => player.id === game.currentPlayerId);
-  const myTurn = game.status === "playing" && game.currentPlayerId === state.playerId && !me?.spectator;
+  const myTurn = game.status === "playing" && game.currentPlayerId === state.playerId && !me?.spectator && !game.reconnectWait;
   document.querySelector(".table-surface").dataset.turn = myTurn ? "you" : "other";
   const winner = game.winner;
   const challenge = game.wild4Challenge;
@@ -828,6 +830,7 @@ function renderGame(game) {
   renderActiveRules(game);
   renderChat(game.chat || []);
   renderVoiceParticipants();
+  renderReconnectCountdown(game);
   if (myTurn && game.mustChooseSwapTarget) {
     byId("turnStatus").textContent = "Choose a player to swap hands with";
     const drawnCard = game.hand.find((card) => game.playableCardIds.includes(card.id));
@@ -976,7 +979,11 @@ function submitJoin(createRoom) {
   state.username = username;
   state.avatar = avatar;
   renderReactionPickers();
-  const payload = { username, avatar };
+  if (!state.profileReady) {
+    toast("Your profile is still connecting. Try again in a moment.", true);
+    return;
+  }
+  const payload = { username, avatar, profileToken: state.profileToken };
   if (!createRoom) {
     const roomCode = byId("roomCodeInput").value.trim().toUpperCase();
     if (!/^[A-Z0-9]{6}$/.test(roomCode)) {
@@ -1297,6 +1304,7 @@ function initializeSocket() {
   });
   state.socket.on("disconnect", () => {
     state.actionPending = false;
+    byId("connectionBanner").textContent = "Reconnecting… Your turn is held for up to 30 seconds.";
     if (state.voice.joined) leaveVoice(false);
     if (state.roomCode) byId("connectionBanner").classList.remove("hidden");
   });
@@ -1544,7 +1552,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   const typing = event.target.matches("input, select, textarea, [contenteditable='true']");
-  if (typing || views.game.classList.contains("hidden")) return;
+  if (typing || !byId("profileModal").classList.contains("hidden") || views.game.classList.contains("hidden")) return;
   const cards = [...byId("playerHand").querySelectorAll("button.uno-card")];
   if (["ArrowRight", "ArrowLeft"].includes(event.key) && cards.length) {
     event.preventDefault();
@@ -1726,4 +1734,4 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 }
 
-initializeSocket();
+// features.js initializes the socket after profile handlers are available.

@@ -337,3 +337,19 @@ For durable SQLite data, create a Railway volume, mount it at `/data`, and add `
 | `leaveRoom` | Explicit room exit |
 
 The server emits `lobbyState`, private `gameState`, `chatMessage`, `notification`, `soundEffect`, `voiceParticipants`, `voiceSignal`, `voicePeerLeft`, and `errorMessage` updates.
+
+## Player profiles, achievements, and personal style
+
+- **My profile** is available from the welcome screen, lobby, and in-game Settings. A private browser key restores your profile without a signup. Profile identity is separate from room-seat recovery tokens; only a hash of the profile key is stored in the database.
+- Profiles track completed online rounds, wins, points, win rate, and the ten most recent rounds across rooms. Team partners both receive a win and the team's awarded points. Stats update only when the round finishes.
+- Nine achievements track a first completed round, first win, ten rounds, five wins, 500 points, a three-win streak, a valid UNO declaration, a successful Catch UNO, and a successful +4 challenge. Achievements are calculated by the server when a round finishes, including rounds against bots. Offline practice does not award stats or achievements.
+- Select Emerald, Ocean, Midnight, or Plum felt, and Classic, Aurora, Carbon, or Royal card backs. Choices preview immediately; Save changes stores them in the profile and browser. Offline practice reuses saved browser style choices. Card-face colours and values stay the same, and other players' views are unaffected.
+- The browser key is not an account password or a cross-device login. Clearing browser data loses access to that profile. A browser profile can hold only one seat per room.
+
+### 30-second reconnect grace
+
+An accidental disconnect reserves the seat and hand for recovery. If that player owns the turn, the table displays a server-timed 30-second countdown. Reconnecting in time preserves the turn and any drawn-card decision. Otherwise the game advances; a pending draw stack is collected, and a pending +4 is accepted automatically before play continues. Jump-In cannot bypass the grace window. Explicitly leaving skips the wait. A disconnected host retains host status during the grace window, then it transfers to another connected human.
+
+### Profile data durability
+
+Profiles, achievements, recent rounds, and room snapshots use the configured SQL database. Keep it on persistent storage in production: Render's free ephemeral filesystem can lose SQLite data during a redeploy or restart. Use an existing persistent volume and `DATABASE_URL`, or configure a durable database before relying on long-term profile history. No paid storage is provisioned by this update.

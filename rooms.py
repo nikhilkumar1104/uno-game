@@ -9,7 +9,7 @@ import threading
 import time
 from typing import Any
 
-from game_engine import GameRuleError, ensure_connected_turn
+from game_engine import GameRuleError, RECONNECT_GRACE_SECONDS, ensure_connected_turn
 
 
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
@@ -54,6 +54,8 @@ class RoomManager:
                 for player in room.get("players", []):
                     player["connected"] = bool(player.get("is_bot"))
                     player["socket_id"] = None
+                    if not player.get("is_bot") and room["status"] == "playing" and not player.get("left"):
+                        player["reconnect_deadline"] = time.time() + RECONNECT_GRACE_SECONDS
                 self.rooms[room["code"]] = room
 
     @staticmethod
@@ -93,6 +95,8 @@ class RoomManager:
             if not player.get("is_bot"):
                 player.setdefault("recovery_token", secrets.token_urlsafe(32))
             player.setdefault("team", None)
+            player.setdefault("profile_id", None)
+            player.setdefault("reconnect_deadline", None)
             if player.get("is_bot"):
                 player.setdefault("bot_difficulty", "medium")
                 player.setdefault("bot_personality", "balanced")
@@ -120,6 +124,8 @@ class RoomManager:
             "connected": True,
             "spectator": spectator,
             "left": False,
+            "reconnect_deadline": None,
+            "profile_id": None,
             "hand": [],
             "said_uno": False,
             "is_bot": False,
@@ -194,11 +200,12 @@ class RoomManager:
             room["updated_at"] = time.time()
             return bot
 
-    def create_room(self, sid: str, username: Any, avatar: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    def create_room(self, sid: str, username: Any, avatar: Any, profile_id: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
         with self.lock:
             self._require_unseated_socket(sid)
             name = clean_username(username)
             player = self._new_player(sid, name, clean_avatar(avatar))
+            player["profile_id"] = profile_id
             code = self._new_code()
             now = time.time()
             room = {
@@ -243,7 +250,7 @@ class RoomManager:
             return room, player
 
     def join_room(
-        self, sid: str, room_code: Any, username: Any, avatar: Any, recovery_token: Any = None
+        self, sid: str, room_code: Any, username: Any, avatar: Any, recovery_token: Any = None, profile_id: str | None = None
     ) -> tuple[dict[str, Any], dict[str, Any], bool]:
         with self.lock:
             self._require_unseated_socket(sid)
@@ -273,10 +280,14 @@ class RoomManager:
                     self.sid_to_player.pop(old_sid, None)
                 existing["socket_id"] = sid
                 existing["connected"] = True
+                existing["reconnect_deadline"] = None
                 existing["left"] = False
                 self.sid_to_player[sid] = (code, existing["id"])
                 room["updated_at"] = time.time()
                 return room, existing, True
+
+            if profile_id and any(p.get("profile_id") == profile_id and not p.get("left") for p in room["players"]):
+                raise GameRuleError("This profile already has a seat here. Rejoin it in the original browser tab.")
 
             active_count = sum(not player["spectator"] for player in room["players"])
             spectator = room["status"] != "lobby" or active_count >= 6
@@ -285,6 +296,7 @@ class RoomManager:
                 raise GameRuleError("This room's spectator seats are full.")
 
             player = self._new_player(sid, name, clean_avatar(avatar), spectator=spectator)
+            player["profile_id"] = profile_id
             room["players"].append(player)
             room["updated_at"] = time.time()
             self.sid_to_player[sid] = (code, player["id"])
@@ -319,6 +331,7 @@ class RoomManager:
                 self.sid_to_player.pop(old_sid, None)
             player["socket_id"] = sid
             player["connected"] = True
+            player["reconnect_deadline"] = None
             player["left"] = False
             self.sid_to_player[sid] = (code, player["id"])
             room["updated_at"] = time.time()
@@ -353,6 +366,8 @@ class RoomManager:
             if player:
                 player["connected"] = False
                 player["socket_id"] = None
+                if room["status"] == "playing" and not player["spectator"] and not player.get("left"):
+                    player["reconnect_deadline"] = time.time() + RECONNECT_GRACE_SECONDS
             self._transfer_host_if_needed(room)
             if room["status"] == "playing":
                 ensure_connected_turn(room)
@@ -373,6 +388,7 @@ class RoomManager:
                 player["connected"] = False
                 player["socket_id"] = None
                 player["left"] = True
+                player["reconnect_deadline"] = None
                 ensure_connected_turn(room)
             elif player:
                 room["players"].remove(player)
@@ -387,8 +403,9 @@ class RoomManager:
     @staticmethod
     def _transfer_host_if_needed(room: dict[str, Any]) -> None:
         host = next((seat for seat in room["players"] if seat["id"] == room["host_id"]), None)
-        if host and host["connected"] and not host.get("left") and not host.get("is_bot"):
-            return
+        if host and not host.get("left") and not host.get("is_bot"):
+            if host["connected"] or (room["status"] == "playing" and float(host.get("reconnect_deadline") or 0) > time.time()):
+                return
         replacement = next(
             (
                 seat

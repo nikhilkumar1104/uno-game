@@ -109,6 +109,8 @@ def record_match(room: dict[str, Any]) -> bool:
     game_id = room.get("game_id")
     if not winner or not game_id:
         return False
+    if db.session.execute(db.select(MatchRecord.id).where(MatchRecord.game_id == game_id)).scalar_one_or_none():
+        return False
     active = [player for player in room["players"] if not player["spectator"]]
     record = MatchRecord(
         game_id=game_id,
@@ -122,11 +124,11 @@ def record_match(room: dict[str, Any]) -> bool:
     db.session.add(record)
     for player in active:
         stat = db.session.execute(
-            db.select(PlayerStat).where(PlayerStat.player_key == player["id"])
+            db.select(PlayerStat).where(PlayerStat.player_key == (player.get("profile_id") or player["id"]))
         ).scalar_one_or_none()
         if not stat:
             stat = PlayerStat(
-                player_key=player["id"],
+                player_key=player.get("profile_id") or player["id"],
                 display_name=player["username"],
                 games=0,
                 wins=0,
@@ -135,10 +137,12 @@ def record_match(room: dict[str, Any]) -> bool:
             db.session.add(stat)
         stat.display_name = player["username"]
         stat.games = (stat.games or 0) + 1
-        if player["id"] == winner["id"]:
+        if player["id"] == winner["id"] or (winner.get("isTeam") and player.get("team") == winner.get("team")):
             stat.wins = (stat.wins or 0) + 1
             stat.points = (stat.points or 0) + int(winner.get("points", 0))
     try:
+        from profiles import record_profile_results
+        record_profile_results(room)
         db.session.commit()
         return True
     except IntegrityError:

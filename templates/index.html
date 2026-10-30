@@ -9,8 +9,9 @@
   <title>UNO Live</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='11') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='12') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='graphics.css', v='1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='features.css', v='1') }}">
 </head>
 <body data-initial-room="{{ initial_room_code }}" data-view="welcome" data-chat-focus="false">
   <div id="connectionBanner" class="connection-banner hidden" role="status">Reconnecting...</div>
@@ -37,6 +38,8 @@
         <input id="musicVolume" type="range" min="0" max="100" step="5" value="20">
       </label>
       <hr class="settings-divider">
+      <button class="secondary-button" data-open-profile type="button">Profile, achievements & style</button>
+      <hr class="settings-divider">
       <strong>Accessibility</strong>
       <label class="toggle-row"><input id="colorBlindToggle" type="checkbox"> Color symbols</label>
       <label class="toggle-row"><input id="highContrastToggle" type="checkbox"> High contrast</label>
@@ -53,6 +56,7 @@
         </a>
         <div class="nav-actions">
           <button id="installAppBtn" class="quiet-button hidden" type="button">Install app</button>
+          <button class="quiet-button" data-open-profile type="button">My profile</button>
           <button id="themeToggle" class="quiet-button" type="button">Light mode</button>
         </div>
       </header>
@@ -162,9 +166,40 @@
     </div>
   </div>
 
+  <div id="profileModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
+    <section class="modal-panel profile-panel">
+      <header class="profile-heading"><div><p class="kicker">Your player space</p><h2 id="profileTitle">My profile</h2></div><button id="closeProfileBtn" class="quiet-button" type="button" aria-label="Close profile">Close</button></header>
+      <p id="profileStatus" class="profile-help" role="status">Connecting your profile…</p>
+      <div class="profile-tabs" role="tablist" aria-label="Profile sections">
+        <button class="active" data-profile-tab="profileDetails" type="button" role="tab" aria-selected="true">Profile</button>
+        <button data-profile-tab="profileAchievements" type="button" role="tab" aria-selected="false">Achievements</button>
+        <button data-profile-tab="profileStyle" type="button" role="tab" aria-selected="false">Table style</button>
+      </div>
+      <form id="profileForm">
+        <div id="profileDetails" class="profile-section" role="tabpanel">
+          <div class="profile-stats" id="profileStats"></div>
+          <div class="profile-fields">
+            <label class="field"><span>Display name</span><input id="profileName" minlength="2" maxlength="18" required autocomplete="nickname"></label>
+            <label class="field"><span>Avatar</span><select id="profileAvatar"><option value="ember">Ember</option><option value="bolt">Bolt</option><option value="wave">Wave</option><option value="leaf">Leaf</option><option value="star">Star</option><option value="nova">Nova</option></select></label>
+          </div>
+          <h3>Recent rounds</h3><div id="profileHistory" class="profile-history"></div>
+          <p class="profile-help">Name and avatar changes apply when you join your next room. This browser keeps your private profile key. Clearing browser data loses access.</p>
+        </div>
+        <div id="profileAchievements" class="profile-section hidden" role="tabpanel"><p class="profile-help">Earned from completed online rounds, including games against computers.</p><div id="achievementGrid" class="achievement-grid"></div></div>
+        <div id="profileStyle" class="profile-section hidden" role="tabpanel">
+          <fieldset><legend>Table theme</legend><div class="style-options" id="tableThemeChoices"></div></fieldset>
+          <fieldset><legend>Card back</legend><div class="style-options" id="cardBackChoices"></div></fieldset>
+          <p class="profile-help">Preview your choices immediately. Save to keep them. These choices change only your view.</p>
+        </div>
+        <footer class="profile-footer"><button id="saveProfileBtn" class="primary-button" type="submit" disabled>Save changes</button></footer>
+      </form>
+    </section>
+  </div>
+
   <div id="remoteAudio" aria-hidden="true"></div>
 
   <script src="{{ url_for('static', filename='vendor/socket.io.min.js', v='4.8.3') }}"></script>
-  <script src="{{ url_for('static', filename='script.js', v='11') }}" defer></script>
+  <script src="{{ url_for('static', filename='script.js', v='12') }}" defer></script>
+  <script src="{{ url_for('static', filename='features.js', v='1') }}" defer></script>
 </body>
 </html>
