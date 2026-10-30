@@ -287,6 +287,17 @@ function makeAvatar(player) {
   const avatar = document.createElement("span");
   avatar.className = `avatar ${player.avatar || "ember"}`;
   avatar.textContent = initials(player.username);
+  const characterNames = ["robot", "astronaut", "ninja", "fox", "cat", "owl", "panda", "alien"];
+  const url = player.avatarUrl || (characterNames.includes(player.avatar) ? `/static/avatars/${player.avatar}.svg` : "");
+  if (/^\/avatars\/[a-f0-9]{32}\.jpg$/.test(url) || /^\/static\/avatars\/[a-z]+\.svg$/.test(url)) {
+    const image = document.createElement("img");
+    image.src = url;
+    image.alt = "";
+    image.decoding = "async";
+    image.addEventListener("error", () => image.remove(), {once: true});
+    avatar.classList.add("image-avatar");
+    avatar.appendChild(image);
+  }
   avatar.setAttribute("aria-hidden", "true");
   return avatar;
 }
@@ -308,6 +319,7 @@ function renderReactionPickers() {
   const player = {
     username: state.username || byId("usernameInput")?.value || "You",
     avatar: state.avatar || byId("avatarInput")?.value || "ember",
+    avatarUrl: state.avatarUrl,
   };
   document.querySelectorAll("[data-reaction-picker]").forEach((picker) => {
     const buttons = QUICK_REACTIONS.map((reaction) => {
@@ -1316,6 +1328,7 @@ function initializeSocket() {
     state.recoveryToken = payload.recoveryToken;
     state.username = payload.username || state.username;
     state.avatar = payload.avatar || state.avatar;
+    state.avatarUrl = payload.avatarUrl || null;
     state.isHost = payload.isHost;
     renderReactionPickers();
     persistSession();

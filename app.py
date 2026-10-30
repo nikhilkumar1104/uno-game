@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import json
 import time
+import io
 from pathlib import Path
 from typing import Any, Callable
 
-from flask import Flask, current_app, jsonify, render_template, request, send_from_directory
+from flask import Flask, current_app, jsonify, render_template, request, send_from_directory, send_file
+from werkzeug.exceptions import RequestEntityTooLarge
 from flask_socketio import SocketIO, emit, join_room as socket_join_room, leave_room as socket_leave_room
 
 from bot_player import perform_bot_turn
@@ -35,6 +37,7 @@ from game_engine import (
 from models import db, delete_room, ensure_schema, load_rooms, record_match, save_room
 from rooms import RoomManager
 from profiles import create_profile, resolve_profile, update_profile, profile_payload
+from avatars import ProfilePhoto, avatar_url, save_photo
 
 
 socketio = SocketIO(async_mode="threading", logger=False, engineio_logger=False)
@@ -104,6 +107,42 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             rooms=len(_manager().rooms),
             timestamp=int(time.time()),
         )
+
+    @app.before_request
+    def avatar_upload_limit():
+        if request.endpoint == "upload_profile_avatar":
+            request.max_content_length = 2 * 1024 * 1024 + 16 * 1024
+
+    @app.post("/api/profile/avatar")
+    def upload_profile_avatar():
+        try:
+            profile = resolve_profile(request.form.get("profileToken"))
+            upload = request.files.get("photo")
+            if not upload:
+                raise GameRuleError("Choose a photo to upload.")
+            update_profile(profile, {**request.form.to_dict(), "avatar": "photo"}, commit=False, photo_pending=True)
+            save_photo(profile, upload.read(2 * 1024 * 1024 + 1))
+            _sync_profile_avatar(profile)
+            return jsonify(profile=profile_payload(profile))
+        except RequestEntityTooLarge:
+            db.session.rollback()
+            return jsonify(error="That upload is too large. Choose a smaller photo."), 413
+        except GameRuleError as exc:
+            db.session.rollback()
+            return jsonify(error=str(exc)), 400
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Profile photo upload failed")
+            return jsonify(error="The photo could not be saved. Please try again."), 500
+
+    @app.get("/avatars/<image_id>.jpg")
+    def profile_photo(image_id):
+        if len(image_id) != 32 or any(c not in "0123456789abcdef" for c in image_id):
+            return "", 404
+        photo = db.session.execute(db.select(ProfilePhoto).where(ProfilePhoto.image_id == image_id)).scalar_one_or_none()
+        if not photo:
+            return "", 404
+        return send_file(io.BytesIO(photo.content), mimetype="image/jpeg", max_age=3600, etag=image_id)
 
     @app.get("/sw.js")
     def service_worker():
@@ -329,6 +368,27 @@ def _record_and_notify_profiles(room: dict[str, Any]) -> None:
                 socketio.emit("profileUpdated", profile_payload(profile), to=player["socket_id"])
 
 
+def _sync_profile_avatar(profile) -> None:
+    manager = _manager()
+    with manager.lock:
+        url = avatar_url(profile)
+        for room in manager.rooms.values():
+            changed = False
+            for player in room["players"]:
+                if player.get("profile_id") != profile.id:
+                    continue
+                if player["avatar"] == profile.avatar and player.get("avatar_url") == url:
+                    continue
+                player["avatar"], player["avatar_url"] = profile.avatar, url
+                for message in room.get("chat", []):
+                    if message.get("playerId") == player["id"]:
+                        message["avatar"], message["avatarUrl"] = profile.avatar, url
+                changed = True
+            if changed:
+                _persist(room)
+                _send_state(room)
+
+
 def _schedule_reconnect_timeout(room: dict[str, Any], player: dict[str, Any]) -> None:
     if current_app.config.get("TESTING"):
         return
@@ -383,6 +443,7 @@ def handle_update_profile(data=None) -> None:
         payload = data or {}
         profile = resolve_profile(payload.get("profileToken"))
         update_profile(profile, payload)
+        _sync_profile_avatar(profile)
         emit("profileUpdated", profile_payload(profile))
         emit("profileSaved")
     except Exception as exc:
@@ -415,8 +476,10 @@ def handle_bind_profile(data=None) -> None:
             if any(p.get("profile_id") == profile.id and p["id"] != player["id"] for p in room["players"]):
                 raise GameRuleError("This profile already has a seat here.")
             player["profile_id"] = profile.id
-            profile.display_name, profile.avatar = player["username"], player["avatar"]
+            profile.display_name = player["username"]
+            player["avatar"], player["avatar_url"] = profile.avatar, avatar_url(profile)
             _persist(room)
+            _send_state(room)
     except Exception as exc:
         _error(exc)
 
@@ -477,6 +540,7 @@ def handle_create_room(data: dict[str, Any] | None) -> None:
         )
         if profile:
             profile.display_name, profile.avatar = player["username"], player["avatar"]
+            player["avatar_url"] = avatar_url(profile)
         socket_join_room(room["code"])
         _persist(room)
         emit(
@@ -487,6 +551,7 @@ def handle_create_room(data: dict[str, Any] | None) -> None:
                 "recoveryToken": player["recovery_token"],
                 "username": player["username"],
                 "avatar": player["avatar"],
+                "avatarUrl": player.get("avatar_url"),
                 "isHost": True,
                 "spectator": False,
             },
@@ -511,6 +576,7 @@ def handle_join_room(data: dict[str, Any] | None) -> None:
         )
         if profile and not rejoined:
             profile.display_name, profile.avatar = player["username"], player["avatar"]
+            player["avatar_url"] = avatar_url(profile)
         socket_join_room(room["code"])
         _persist(room)
         emit(
@@ -521,6 +587,7 @@ def handle_join_room(data: dict[str, Any] | None) -> None:
                 "recoveryToken": player["recovery_token"],
                 "username": player["username"],
                 "avatar": player["avatar"],
+                "avatarUrl": player.get("avatar_url"),
                 "isHost": player["id"] == room["host_id"],
                 "spectator": player["spectator"],
                 "rejoined": rejoined,
@@ -561,6 +628,7 @@ def handle_rejoin_room(data: dict[str, Any] | None) -> None:
                 "recoveryToken": player["recovery_token"],
                 "username": player["username"],
                 "avatar": player["avatar"],
+                "avatarUrl": player.get("avatar_url"),
                 "isHost": player["id"] == room["host_id"],
                 "spectator": player["spectator"],
                 "rejoined": True,

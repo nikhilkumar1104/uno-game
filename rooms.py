@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 from game_engine import GameRuleError, RECONNECT_GRACE_SECONDS, ensure_connected_turn
+from avatars import CHARACTER_AVATARS, INITIAL_AVATARS
 
 
 ROOM_ALPHABET = string.ascii_uppercase + string.digits
@@ -30,7 +31,7 @@ def clean_username(value: Any) -> str:
 
 def clean_avatar(value: Any) -> str:
     value = str(value or "ember").lower().strip()
-    return value if value in {"ember", "bolt", "wave", "leaf", "star", "nova"} else "ember"
+    return value if value in {*INITIAL_AVATARS, *CHARACTER_AVATARS, "photo"} else "ember"
 
 
 def clean_chat(value: Any) -> str:
@@ -427,6 +428,7 @@ class RoomManager:
                 "playerId": player["id"],
                 "username": player["username"],
                 "avatar": player["avatar"],
+                "avatarUrl": player.get("avatar_url"),
                 "text": clean_chat(text),
                 "sentAt": int(time.time()),
             }
