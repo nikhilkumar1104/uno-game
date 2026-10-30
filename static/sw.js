@@ -1,21 +1,29 @@
 "use strict";
 
-const CACHE = "uno-live-release-1-v8";
+const CACHE = "uno-live-release-1-v9";
 const OFFLINE = "/static/offline.html";
 const APP_SHELL = [
   "/",
   OFFLINE,
-  "/static/style.css?v=12",
+  "/static/style.css?v=13",
   "/static/graphics.css?v=1",
-  "/static/features.css?v=1",
-  "/static/features.js?v=1",
-  "/static/script.js?v=12",
+  "/static/features.css?v=2",
+  "/static/features.js?v=2",
+  "/static/script.js?v=13",
   "/static/offline.css",
   "/static/offline.js",
   "/static/manifest.webmanifest",
   "/static/vendor/socket.io.min.js?v=4.8.3",
   "/static/icons/icon-192.png",
-  "/static/icons/icon-512.png"
+  "/static/icons/icon-512.png",
+  "/static/avatars/robot.svg",
+  "/static/avatars/astronaut.svg",
+  "/static/avatars/ninja.svg",
+  "/static/avatars/fox.svg",
+  "/static/avatars/cat.svg",
+  "/static/avatars/owl.svg",
+  "/static/avatars/panda.svg",
+  "/static/avatars/alien.svg"
 ];
 
 self.addEventListener("install", (event) => {

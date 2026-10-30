@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from game_engine import GameRuleError
 from models import PlayerStat, db
 from rooms import clean_avatar, clean_username
+from avatars import avatar_url, photo_url
 
 TABLE_THEMES = ('emerald', 'ocean', 'midnight', 'plum')
 CARD_BACKS = ('classic', 'aurora', 'carbon', 'royal')
@@ -64,22 +65,28 @@ def create_profile(name='Player', avatar='ember'):
         id=uuid.uuid4().hex, token_hash=hashlib.sha256(token.encode()).hexdigest(),
         display_name=clean_username(name), avatar=clean_avatar(avatar),
     )
+    if profile.avatar == "photo":
+        profile.avatar = "ember"
     db.session.add(profile)
     db.session.commit()
     return profile, token
 
 
-def update_profile(profile, data):
+def update_profile(profile, data, *, commit=True, photo_pending=False):
     name = clean_username(data.get('displayName', profile.display_name))
     theme = data.get('tableTheme', profile.table_theme)
     back = data.get('cardBack', profile.card_back)
     if theme not in TABLE_THEMES or back not in CARD_BACKS:
         raise GameRuleError('Choose a supported table theme and card back.')
+    avatar = clean_avatar(data.get("avatar", profile.avatar))
+    if avatar == "photo" and not photo_pending and not photo_url(profile.id):
+        raise GameRuleError("Upload a photo first, or choose a character icon.")
     profile.display_name = name
-    profile.avatar = clean_avatar(data.get('avatar', profile.avatar))
+    profile.avatar = avatar
     profile.table_theme = theme
     profile.card_back = back
-    db.session.commit()
+    if commit:
+        db.session.commit()
 
 
 def profile_payload(profile):
@@ -91,6 +98,7 @@ def profile_payload(profile):
     history = db.session.execute(db.select(ProfileRound).where(ProfileRound.profile_id == profile.id).order_by(ProfileRound.finished_at.desc(), ProfileRound.id.desc()).limit(10)).scalars()
     return {
         'id': profile.id, 'displayName': profile.display_name, 'avatar': profile.avatar,
+        'avatarUrl': avatar_url(profile), 'photoUrl': photo_url(profile.id),
         'tableTheme': profile.table_theme, 'cardBack': profile.card_back,
         'games': values['games'], 'wins': values['wins'], 'points': values['points'],
         'winRate': round(100 * values['wins'] / values['games']) if values['games'] else 0,

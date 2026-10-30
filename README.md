@@ -353,3 +353,9 @@ An accidental disconnect reserves the seat and hand for recovery. If that player
 ### Profile data durability
 
 Profiles, achievements, recent rounds, and room snapshots use the configured SQL database. Keep it on persistent storage in production: Render's free ephemeral filesystem can lose SQLite data during a redeploy or restart. Use an existing persistent volume and `DATABASE_URL`, or configure a durable database before relying on long-term profile history. No paid storage is provisioned by this update.
+
+### Profile photos and character avatars
+
+The Profile tab includes an avatar preview, a photo upload button, eight bundled character icons (Robot, Astronaut, Ninja, Fox, Cat, Owl, Panda, Alien), and an initials option. Save changes to apply an avatar immediately to your current lobby/table, reactions, and chat. You can switch back to your saved photo without uploading it again.
+
+Photos accept still JPEG, PNG, and WebP files. The browser prepares a centred square preview; the server independently decodes the image, limits size/dimensions, and stores a 256×256 JPEG without source metadata. Photo uploads use an authenticated HTTP request rather than increasing the Socket.IO message limit. Profile photos are visible to other players and are stored in the same database as profile history, so they require the same persistent storage in production.

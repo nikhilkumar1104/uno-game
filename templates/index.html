@@ -9,9 +9,9 @@
   <title>UNO Live</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='12') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='13') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='graphics.css', v='1') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='features.css', v='1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='features.css', v='2') }}">
 </head>
 <body data-initial-room="{{ initial_room_code }}" data-view="welcome" data-chat-focus="false">
   <div id="connectionBanner" class="connection-banner hidden" role="status">Reconnecting...</div>
@@ -89,17 +89,11 @@
             <span>Display name</span>
             <input id="usernameInput" name="username" maxlength="18" minlength="2" placeholder="Your name" autocomplete="nickname" required>
           </label>
-          <label class="field">
-            <span>Avatar style</span>
-            <select id="avatarInput" name="avatar">
-              <option value="ember">Ember</option>
-              <option value="bolt">Bolt</option>
-              <option value="wave">Wave</option>
-              <option value="leaf">Leaf</option>
-              <option value="star">Star</option>
-              <option value="nova">Nova</option>
-            </select>
-          </label>
+          <div class="field">
+            <span>Your avatar</span>
+            <div class="welcome-avatar-row"><span id="welcomeAvatarPreview"></span><button class="quiet-button" data-open-profile type="button">Choose photo or character</button></div>
+            <input id="avatarInput" type="hidden" value="ember">
+          </div>
           <button id="createRoomBtn" class="primary-button" type="button">Create room</button>
           <a class="practice-link" href="{{ url_for('static', filename='offline.html') }}">Practice offline vs computer</a>
           <div class="divider"><span>or join with a code</span></div>
@@ -180,10 +174,22 @@
           <div class="profile-stats" id="profileStats"></div>
           <div class="profile-fields">
             <label class="field"><span>Display name</span><input id="profileName" minlength="2" maxlength="18" required autocomplete="nickname"></label>
-            <label class="field"><span>Avatar</span><select id="profileAvatar"><option value="ember">Ember</option><option value="bolt">Bolt</option><option value="wave">Wave</option><option value="leaf">Leaf</option><option value="star">Star</option><option value="nova">Nova</option></select></label>
+            <div class="field"><span>Your avatar</span><div class="avatar-preview-row"><span id="profileAvatarPreview"></span><span id="avatarChoiceLabel">Initials</span></div></div>
           </div>
+          <fieldset class="avatar-picker">
+            <legend>Choose your look</legend>
+            <input id="profileAvatar" type="hidden" value="ember">
+            <div class="avatar-upload-actions">
+              <button id="uploadAvatarPhotoBtn" class="secondary-button" type="button">Upload your photo</button>
+              <input id="avatarPhotoInput" class="avatar-file-input" tabindex="-1" aria-hidden="true" type="file" accept="image/jpeg,image/png,image/webp">
+              <button id="useSavedPhotoBtn" class="quiet-button hidden" type="button">Use saved photo</button>
+              <button id="useInitialsBtn" class="quiet-button" type="button">Use initials</button>
+            </div>
+            <p id="avatarUploadStatus" class="profile-help" role="status">JPEG, PNG or WebP · photos are cropped to a square. Visible to other players.</p>
+            <div id="characterAvatarChoices" class="character-avatar-choices" role="group" aria-label="Character avatars"></div>
+          </fieldset>
           <h3>Recent rounds</h3><div id="profileHistory" class="profile-history"></div>
-          <p class="profile-help">Name and avatar changes apply when you join your next room. This browser keeps your private profile key. Clearing browser data loses access.</p>
+          <p class="profile-help">Name changes apply in your next room. Avatar changes update your current table. This browser keeps your private profile key. Clearing browser data loses access.</p>
         </div>
         <div id="profileAchievements" class="profile-section hidden" role="tabpanel"><p class="profile-help">Earned from completed online rounds, including games against computers.</p><div id="achievementGrid" class="achievement-grid"></div></div>
         <div id="profileStyle" class="profile-section hidden" role="tabpanel">
@@ -199,7 +205,7 @@
   <div id="remoteAudio" aria-hidden="true"></div>
 
   <script src="{{ url_for('static', filename='vendor/socket.io.min.js', v='4.8.3') }}"></script>
-  <script src="{{ url_for('static', filename='script.js', v='12') }}" defer></script>
-  <script src="{{ url_for('static', filename='features.js', v='1') }}" defer></script>
+  <script src="{{ url_for('static', filename='script.js', v='13') }}" defer></script>
+  <script src="{{ url_for('static', filename='features.js', v='2') }}" defer></script>
 </body>
 </html>

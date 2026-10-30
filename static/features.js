@@ -5,6 +5,67 @@ state.profile = null;
 state.profileReady = false;
 let profileReturnFocus = null;
 let reconnectTimer = null;
+let draftPhoto = null;
+let draftPhotoUrl = null;
+let avatarDirty = false;
+let avatarLoadVersion = 0;
+const CHARACTER_AVATARS = [ ['robot', 'Robot'], ['astronaut', 'Astronaut'], ['ninja', 'Ninja'], ['fox', 'Fox'], ['cat', 'Cat'], ['owl', 'Owl'], ['panda', 'Panda'], ['alien', 'Alien'] ];
+
+function resetAvatarDraft() {
+  avatarLoadVersion += 1;
+  if (draftPhotoUrl) URL.revokeObjectURL(draftPhotoUrl);
+  draftPhoto = null; draftPhotoUrl = null; avatarDirty = false;
+  byId('avatarPhotoInput').value = '';
+}
+
+function renderAvatarPicker() {
+  const choice = byId('profileAvatar').value || 'ember';
+  const url = choice === 'photo' ? (draftPhotoUrl || state.profile?.photoUrl) : null;
+  const preview = makeAvatar({username: byId('profileName').value || 'You', avatar: choice, avatarUrl: url});
+  if (draftPhotoUrl && choice === 'photo') {
+    const image = document.createElement('img'); image.src = draftPhotoUrl; image.alt = '';
+    preview.replaceChildren(image); preview.classList.add('image-avatar');
+  }
+  byId('profileAvatarPreview').replaceChildren(preview);
+  byId('avatarChoiceLabel').textContent = choice === 'photo' ? 'Your photo' : (CHARACTER_AVATARS.find(([id]) => id === choice)?.[1] || 'Your initials');
+  byId('useSavedPhotoBtn').classList.toggle('hidden', !state.profile?.photoUrl);
+  byId('characterAvatarChoices').replaceChildren(...CHARACTER_AVATARS.map(([id, title]) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'character-avatar-choice';
+    button.setAttribute('aria-pressed', String(choice === id));
+    const image = document.createElement('img');image.src = `/static/avatars/${id}.svg`; image.alt = '';
+    const label = document.createElement('span');label.textContent = title;
+    button.append(image, label);
+    button.addEventListener('click', () => {avatarLoadVersion += 1;byId('profileAvatar').value = id;avatarDirty = true;byId('saveProfileBtn').disabled = !state.profileReady;byId('avatarUploadStatus').textContent = 'Character selected. Save changes to use it.';renderAvatarPicker();});
+    return button;
+  }));
+}
+
+async function prepareAvatarPhoto(file) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose a JPEG, PNG, or WebP photo.');
+  if (file.size > 10 * 1024 * 1024) throw new Error('Choose a photo smaller than 10 MB.');
+  let sourceUrl = null;
+  let bitmap;
+  if (typeof createImageBitmap === 'function') bitmap = await createImageBitmap(file);
+  else {
+    sourceUrl = URL.createObjectURL(file);
+    try {
+      bitmap = await new Promise((resolve, reject) => {
+        const image = new Image(); image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('This photo could not be read. Try another image.'));
+        image.src = sourceUrl;
+      });
+    } catch (error) {URL.revokeObjectURL(sourceUrl);throw error;}
+  }
+  try {
+    const canvas = document.createElement('canvas');canvas.width = 256;canvas.height = 256;
+    const ctx = canvas.getContext('2d');ctx.fillStyle = '#fff';ctx.fillRect(0, 0, 256, 256);
+    const size = Math.min(bitmap.width, bitmap.height);
+    ctx.drawImage(bitmap, (bitmap.width-size)/2, (bitmap.height-size)/2, size, size, 0, 0, 256, 256);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .88));
+    if (!blob) throw new Error('This photo could not be processed. Try another image.');
+    return blob;
+  } finally {bitmap.close?.();if (sourceUrl) URL.revokeObjectURL(sourceUrl);}
+}
 
 const TABLE_THEMES = [ ['emerald', 'Emerald'], ['ocean', 'Ocean'], ['midnight', 'Midnight'], ['plum', 'Plum'] ];
 const CARD_BACKS = [ ['classic', 'Classic'], ['aurora', 'Aurora'], ['carbon', 'Carbon'], ['royal', 'Royal'] ];
@@ -45,7 +106,12 @@ function renderProfile(profile) {
   applyPersonalStyle(profile.tableTheme, profile.cardBack, true);
   byId('profileStatus').textContent = `${profile.displayName} · ${profile.achievements.filter(a => a.earnedAt).length} / ${profile.achievements.length} achievements unlocked`;
   byId('profileName').value = profile.displayName;
-  byId('profileAvatar').value = profile.avatar;
+  if (!avatarDirty) byId('profileAvatar').value = profile.avatar;
+  state.avatar = profile.avatar;state.avatarUrl = profile.avatarUrl;
+  byId('avatarInput').value = profile.avatar;
+  byId('welcomeAvatarPreview').replaceChildren(makeAvatar({username: profile.displayName, avatar: profile.avatar, avatarUrl: profile.avatarUrl}));
+  renderAvatarPicker();
+  renderReactionPickers();
   byId('profileStats').replaceChildren(...[
     [profile.games, 'Rounds'], [profile.wins, 'Wins'], [profile.points, 'Points'], [`${profile.winRate}%`, 'Win rate'],
   ].map(([value, label]) => {
@@ -91,6 +157,8 @@ function openProfile() {
 }
 
 function closeProfile() {
+  resetAvatarDraft();
+  if (state.profile) {byId('profileAvatar').value = state.profile.avatar; renderAvatarPicker();}
   byId('profileModal').classList.add('hidden');
   if (state.profile) applyPersonalStyle(state.profile.tableTheme, state.profile.cardBack);
   profileReturnFocus?.focus();
@@ -163,14 +231,47 @@ document.querySelectorAll('[data-profile-tab]').forEach(button => button.addEven
   document.querySelectorAll('[data-profile-tab]').forEach(tab => {tab.classList.toggle('active', tab === button);tab.setAttribute('aria-selected', String(tab === button));});
   document.querySelectorAll('.profile-section').forEach(section => section.classList.toggle('hidden', section.id !== button.dataset.profileTab));
 }));
-byId('profileForm').addEventListener('submit', event => {
+byId('profileForm').addEventListener('submit', async event => {
   event.preventDefault();
   if (!state.profileReady || !state.socket?.connected) {toast('Reconnect before saving your profile.', true);return;}
-  state.socket.emit('updateProfile', {
+  const payload = {
     profileToken: state.profileToken, displayName: byId('profileName').value, avatar: byId('profileAvatar').value,
     tableTheme: document.querySelector('input[name="tableTheme"]:checked').value,
     cardBack: document.querySelector('input[name="cardBack"]:checked').value,
-  });
+  };
+  if (payload.avatar === 'photo' && draftPhoto) {
+    byId('saveProfileBtn').disabled = true;
+    byId('avatarUploadStatus').textContent = 'Saving your photo…';
+    try {
+      const form = new FormData();Object.entries(payload).forEach(([key, value]) => form.append(key, value));
+      form.append('photo', draftPhoto, 'avatar.jpg');
+      const response = await fetch('/api/profile/avatar', {method: 'POST', body: form});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Your photo could not be saved.');
+      resetAvatarDraft();renderProfile(result.profile);closeProfile();toast('Profile photo saved.');
+    } catch (error) {byId('avatarUploadStatus').textContent = error.message;toast(error.message, true);}
+    finally {byId('saveProfileBtn').disabled = !state.profileReady;}
+  } else state.socket.emit('updateProfile', payload);
+});
+byId('uploadAvatarPhotoBtn').addEventListener('click', () => byId('avatarPhotoInput').click());
+byId('avatarPhotoInput').addEventListener('change', async event => {
+  const file = event.target.files[0];if (!file) return;
+  const loadVersion = ++avatarLoadVersion;
+  byId('saveProfileBtn').disabled = true;
+  byId('avatarUploadStatus').textContent = 'Preparing photo preview…';
+  try {
+    const photo = await prepareAvatarPhoto(file);
+    if (loadVersion !== avatarLoadVersion) return;
+    if (draftPhotoUrl) URL.revokeObjectURL(draftPhotoUrl);
+    draftPhoto = photo;draftPhotoUrl = URL.createObjectURL(photo);avatarDirty = true;
+    byId('profileAvatar').value = 'photo';renderAvatarPicker();
+    byId('avatarUploadStatus').textContent = 'Photo ready. Save changes to use it. Visible to other players.';
+  } catch (error) {if (loadVersion === avatarLoadVersion) {byId('avatarUploadStatus').textContent = error.message || 'This photo could not be read.';event.target.value = '';}}
+  finally {if (loadVersion === avatarLoadVersion) byId('saveProfileBtn').disabled = !state.profileReady;}
+});
+byId('useInitialsBtn').addEventListener('click', () => {avatarLoadVersion += 1;byId('profileAvatar').value = 'ember';avatarDirty = true;byId('saveProfileBtn').disabled = !state.profileReady;renderAvatarPicker();});
+byId('useSavedPhotoBtn').addEventListener('click', () => {
+  resetAvatarDraft();byId('profileAvatar').value = 'photo';avatarDirty = true;renderAvatarPicker();
 });
 applyPersonalStyle(localStorage.getItem('uno.tableTheme'), localStorage.getItem('uno.cardBack'));
 styleChoices('tableThemeChoices', TABLE_THEMES, 'tableTheme', false);
