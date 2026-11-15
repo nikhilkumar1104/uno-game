@@ -333,3 +333,34 @@ html[data-contrast="high"] .table-surface::before,
 html[data-contrast="high"] .table-surface::after { display: none; }
 html[data-contrast="high"] :is(.entry-panel, .players-sidebar, .chat-panel, .mode-option, .game-player) { background-image: none; box-shadow: none; }
 html[data-contrast="high"] button.uno-card.blocked { filter: none; opacity: .65; }
+
+/* Final overrides after the decorative card theme: action names must fit. */
+.uno-card .uno-card-value {
+  width: calc(100% - 12px);
+  max-width: 100%;
+  padding: 0 2px;
+  font-size: clamp(21px, 3.8vw, 30px);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transform: none;
+}
+.uno-card .uno-card-value.is-long,
+.uno-card.wild .uno-card-value.is-long {
+  font-size: clamp(12px, 2.2vw, 17px);
+  line-height: 1.04;
+}
+.uno-card .uno-card-value.is-extra-long,
+.uno-card.wild .uno-card-value.is-extra-long {
+  font-size: clamp(10px, 1.9vw, 14px);
+  line-height: 1.02;
+}
+@media (max-width: 600px) {
+  .player-hand .uno-card .uno-card-value { font-size: 25px; }
+  .player-hand .uno-card .uno-card-value.is-long,
+  .player-hand .uno-card.wild .uno-card-value.is-long { font-size: 12px; }
+  .player-hand .uno-card .uno-card-value.is-extra-long,
+  .player-hand .uno-card.wild .uno-card-value.is-extra-long { font-size: 10px; }
+}
