@@ -60,13 +60,20 @@ def test_flip_card_switches_all_hands_and_top_discard():
         "dark": {"color": "purple", "value": "2"},
         "color": "blue", "value": "8",
     }
+    under = {
+        "id": "under", "light": {"color": "red", "value": "5"},
+        "dark": {"color": "teal", "value": "7"},
+        "color": "red", "value": "5",
+    }
+    value["discard_pile"] = [under]
     value["players"][0]["hand"] = [card, back]
     play_card(value, "p0", "flip-one")
     assert value["flip_side"] == "dark"
-    assert value["discard_pile"][-1]["value"] == "3"
+    assert value["discard_pile"][-1]["value"] == "7"
+    assert value["discard_pile"][0]["value"] == "3"
     assert value["players"][0]["hand"][0]["color"] == "purple"
-    assert value["current_color"] == "pink"
-    assert public_state(value, "p1")["topDiscard"]["color"] == "pink"
+    assert value["current_color"] == "teal"
+    assert public_state(value, "p1")["topDiscard"]["color"] == "teal"
 
 
 def test_no_mercy_penalties_stack_if_equal_or_greater():
@@ -154,3 +161,40 @@ def test_variant_lobby_mode_rejects_invalid_and_team_format():
     assert value["mode"] == "no_mercy"
     with pytest.raises(GameRuleError):
         set_game_mode(value, "unknown")
+
+
+def test_flip_wild_draw_two_can_be_challenged():
+    from game_engine import challenge_wild4
+    value = room("flip")
+    illegal = make_card("wild", "wild2")
+    value["players"][0]["hand"] = [illegal, make_card("red", "1")]
+    value["players"][1]["hand"] = [make_card("blue", "4")]
+    play_card(value, "p0", illegal["id"], chosen_color="blue")
+    assert value["wild4_challenge"]["amount"] == 2
+    assert value["wild4_challenge"]["was_legal"] is False
+    assert challenge_wild4(value, "p1") is True
+    assert len(value["players"][0]["hand"]) == 3
+    assert value["current_index"] == 1
+
+
+def test_flip_wild_draw_color_uses_played_color():
+    from game_engine import accept_wild4
+    value = room("flip")
+    value["flip_side"] = "dark"
+    value["current_color"] = "pink"
+    value["discard_pile"] = [make_card("pink", "3")]
+    wild = make_card("wild", "wild_color")
+    value["players"][0]["hand"] = [wild, make_card("purple", "4")]
+    value["players"][1]["hand"] = [make_card("teal", "4")]
+    value["draw_pile"] = [make_card("purple", "9"), make_card("teal", "2")]
+    play_card(value, "p0", wild["id"], chosen_color="purple")
+    assert value["wild4_challenge"]["chosen_color"] == "purple"
+    accept_wild4(value, "p1")
+    assert value["wild4_challenge"] is None
+    assert len(value["players"][1]["hand"]) == 3
+    assert value["current_color"] == "purple"
+
+
+def test_flip_scoring_uses_dark_side_action_values():
+    from game_engine import hand_points
+    assert hand_points([make_card("purple", "skip_everyone"), make_card("wild", "wild_color")], "flip") == 90
