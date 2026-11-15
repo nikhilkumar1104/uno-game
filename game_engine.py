@@ -457,7 +457,7 @@ def _jump_in_player(
         return None
     if reconnect_wait(room):
         return None
-    if room.get("wild4_challenge") or room.get("pending_draw") or room.get("drawn_by_id"):
+    if room.get("wild4_challenge") or room.get("pending_draw") or room.get("drawn_by_id") or room.get("roulette_target_id"):
         return None
     players = active_players(room)
     player = next(
@@ -598,7 +598,8 @@ def _apply_mercy_effect(room, card):
             room["direction"] *= -1
         room["pending_draw"] = room.get("pending_draw", 0) + NO_MERCY_DRAW_PENALTIES[value]
         room["pending_draw_type"] = value
-        advance_turn(room)
+        if value != "wild_reverse_draw4" or len(active_players(room)) != 2:
+            advance_turn(room)
     elif value == "reverse":
         room["direction"] *= -1
         advance_turn(room, 2 if len(active_players(room)) == 2 else 1)
@@ -625,6 +626,7 @@ def resolve_roulette(room, player_id, chosen_color):
     if not target:
         raise GameRuleError("The affected player is no longer active.")
     room["roulette_target_id"] = None
+    room["current_color"] = chosen_color
     _close_uno_window(room)
     drawn = 0
     for _ in range(168):
@@ -675,7 +677,7 @@ def play_card(
         if room.get("pending_draw"):
             raise GameRuleError("That card cannot be stacked on the current draw penalty.")
         raise GameRuleError("That card cannot be played now.")
-    if card["color"] == "wild" and chosen_color not in _mode_colors(room):
+    if card["color"] == "wild" and card["value"] not in ("wild_color_roulette", "wild_color") and chosen_color not in _mode_colors(room):
         raise GameRuleError("Choose a valid color for this game side.")
     if (
         (_rule_enabled(room, "seven_zero") or room.get("mode") == "no_mercy")
@@ -695,7 +697,7 @@ def play_card(
     player["hand"].remove(card)
     room["discard_pile"].append(card)
     room["previous_color"] = previous_color
-    room["current_color"] = chosen_color if card["color"] == "wild" else card["color"]
+    room["current_color"] = (chosen_color or previous_color) if card["color"] == "wild" else card["color"]
     player["said_uno"] = False
     room["move_count"] += 1
     _clear_draw_window(room)
@@ -789,7 +791,10 @@ def draw_card(room: dict[str, Any], player_id: str) -> None:
         room["pending_draw"] = 0
         room["pending_draw_type"] = None
         if room["status"] == "playing":
-            advance_turn(room)
+            if player.get("eliminated") and room.get("mode") == "no_mercy":
+                room["current_index"] %= max(1, len(active_players(room)))
+            else:
+                advance_turn(room)
             ensure_connected_turn(room)
         return
     if room.get("drawn_by_id") == player_id:
@@ -1065,10 +1070,10 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
         ],
         "hand": [] if not viewer or viewer["spectator"] else [_safe_card(card) for card in viewer["hand"]],
         "playableCardIds": playable_ids,
-        "canPass": room.get("drawn_by_id") == viewer_id and not challenge and not _rule_enabled(room, "forced_play"),
+        "canPass": room.get("drawn_by_id") == viewer_id and not challenge and room.get("mode") != "no_mercy" and not _rule_enabled(room, "forced_play"),
         "mustChooseSwapTarget": (
             room.get("drawn_by_id") == viewer_id
-            and _rule_enabled(room, "forced_play")
+            and (_rule_enabled(room, "forced_play") or room.get("mode") == "no_mercy")
             and (_rule_enabled(room, "seven_zero") or room.get("mode") == "no_mercy")
             and not challenge
         ),
