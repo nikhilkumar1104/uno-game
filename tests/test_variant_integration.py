@@ -198,3 +198,58 @@ def test_flip_wild_draw_color_uses_played_color():
 def test_flip_scoring_uses_dark_side_action_values():
     from game_engine import hand_points
     assert hand_points([make_card("purple", "skip_everyone"), make_card("wild", "wild_color")], "flip") == 90
+
+
+def test_mercy_elimination_preserves_reverse_direction_next_seat():
+    value = room("no_mercy", count=3)
+    value["direction"] = -1
+    value["current_index"] = 1
+    value["pending_draw"] = 2
+    value["pending_draw_type"] = "draw2"
+    value["players"][1]["hand"] = [make_card("blue", "1") for _ in range(24)]
+    draw_card(value, "p1")
+    assert value["players"][1]["eliminated"]
+    assert value["status"] == "playing"
+    assert value["current_index"] == 0
+
+
+def test_mercy_zero_rotates_all_hands():
+    value = room("no_mercy", count=3)
+    zero = make_card("red", "0")
+    value["players"][0]["hand"] = [zero, make_card("blue", "8")]
+    value["players"][1]["hand"] = [make_card("green", "4")]
+    value["players"][2]["hand"] = [make_card("yellow", "2")]
+    play_card(value, "p0", zero["id"])
+    assert value["players"][0]["hand"][0]["value"] == "2"
+    assert value["players"][1]["hand"][0]["value"] == "8"
+    assert value["players"][2]["hand"][0]["value"] == "4"
+
+
+def test_mercy_two_player_reverse_draw_four_targets_actor():
+    value = room("no_mercy")
+    card = make_card("wild", "wild_reverse_draw4")
+    value["players"][0]["hand"] = [card, make_card("green", "8")]
+    value["players"][1]["hand"] = [make_card("yellow", "2")]
+    play_card(value, "p0", card["id"], "blue")
+    assert value["pending_draw"] == 4
+    assert value["current_index"] == 0
+    draw_card(value, "p0")
+    assert value["current_index"] == 1
+    assert len(value["players"][0]["hand"]) == 5
+
+
+def test_flip_bot_uses_dark_side_colors_for_wild_cards():
+    import random
+    from bot_player import perform_bot_turn
+    value = room("flip")
+    value["flip_side"] = "dark"
+    value["current_color"] = "teal"
+    value["discard_pile"] = [make_card("teal", "5")]
+    value["players"][0]["is_bot"] = True
+    wild = make_card("wild", "wild")
+    value["players"][0]["hand"] = [wild, make_card("purple", "3")]
+    value["players"][1]["hand"] = [make_card("pink", "2")]
+    result = perform_bot_turn(value, random.Random(1))
+    assert result
+    assert value["discard_pile"][-1]["id"] == wild["id"]
+    assert value["current_color"] == "purple"
