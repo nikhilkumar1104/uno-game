@@ -27,6 +27,7 @@ from game_engine import (
     pass_turn,
     play_card,
     public_state,
+    resolve_roulette,
     queue_rematch,
     rematch_all_ready,
     return_to_lobby,
@@ -280,6 +281,10 @@ def _with_player_action(
 def _bot_action_needed(room: dict[str, Any]) -> bool:
     if room.get("status") != "playing":
         return False
+    roulette_id = room.get("roulette_target_id")
+    if roulette_id:
+        target = next((p for p in room["players"] if p["id"] == roulette_id), None)
+        return bool(target and target.get("is_bot") and target.get("connected"))
     challenge = room.get("wild4_challenge")
     if challenge:
         target = next(
@@ -664,7 +669,7 @@ def handle_set_game_mode(data: dict[str, Any] | None) -> None:
         if room["host_id"] != player_id:
             raise GameRuleError("Only the host can choose the game mode.")
         set_game_mode(room, str(payload.get("mode") or ""))
-        label = "Classic" if room["mode"] == "classic" else "Wild stacking"
+        label = {"classic": "Classic", "wild": "Wild stacking", "flip": "UNO Flip", "no_mercy": "UNO No Mercy"}[room["mode"]]
         return f"The host selected {label} mode."
 
     _with_player_action(data, action)
@@ -721,6 +726,16 @@ def handle_play_card(data: dict[str, Any] | None) -> None:
         )
 
     _with_player_action(data, action, sound_effect="play")
+
+
+@socketio.on("chooseRouletteColor")
+def handle_choose_roulette_color(data: dict[str, Any] | None) -> None:
+    _with_player_action(
+        data,
+        lambda room, player_id, payload: resolve_roulette(
+            room, player_id, str(payload.get("chosenColor") or "")
+        ),
+    )
 
 
 @socketio.on("drawCard")
