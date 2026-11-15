@@ -511,13 +511,23 @@ function makeUnoCard(card, playable = false, interactive = false) {
     element.setAttribute("aria-label", `${card.color} ${cardLabel(card)}${playable ? ", playable" : ""}`);
   }
 
+  const compactLabels = {
+    skip: "⊘", reverse: "↔", draw2: "+2", draw1: "+1",
+    draw4: "+4", draw5: "+5", wild2: "+2", wild4: "+4",
+    wild6: "+6", wild10: "+10", wild_reverse_draw4: "+4",
+    wild_color: "WC", wild_color_roulette: "?", discard_all: "DA",
+    skip_everyone: "⊘", flip: "⇄", wild: "W",
+  };
+  const shortLabel = compactLabels[card.value] || card.value;
   const top = document.createElement("span");
   top.className = "uno-card-corner";
-  top.dataset.label = cardLabel(card);
-  top.textContent = `${COLOR_SYMBOLS[card.color] || ""} ${cardLabel(card)}`.trim();
+  top.textContent = shortLabel;
   const value = document.createElement("span");
   value.className = "uno-card-value";
   value.textContent = cardLabel(card);
+  if (cardLabel(card).length > 6) value.classList.add("is-long");
+  if (cardLabel(card).length > 9) value.classList.add("is-extra-long");
+  element.title = `${card.color} ${cardLabel(card)}`;
   if (card.value === "skip" || card.value === "reverse") {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 32 32");
@@ -537,8 +547,7 @@ function makeUnoCard(card, playable = false, interactive = false) {
   }
   const bottom = document.createElement("span");
   bottom.className = "uno-card-corner bottom";
-  bottom.dataset.label = cardLabel(card);
-  bottom.textContent = `${COLOR_SYMBOLS[card.color] || ""} ${cardLabel(card)}`.trim();
+  bottom.textContent = shortLabel;
   const symbol = document.createElement("span");
   symbol.className = "card-color-symbol";
   symbol.textContent = COLOR_SYMBOLS[card.color] || "";
