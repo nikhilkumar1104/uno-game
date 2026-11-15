@@ -372,7 +372,7 @@ function renderLobbyPlayer(player) {
 
   const note = document.createElement("span");
   note.className = "player-note";
-  note.textContent = player.isBot
+  note.textContent = player.eliminated ? "Eliminated · Mercy Rule" : player.isBot
     ? `${(player.botDifficulty || "medium")[0].toUpperCase()}${(player.botDifficulty || "medium").slice(1)} · ${(player.botPersonality || "balanced").replace("_", " ")}`
     : player.spectator
       ? "Spectator"
@@ -454,6 +454,7 @@ function makeGamePlayer(player, currentPlayerId) {
   name.textContent = player.username;
   if (player.isHost) name.appendChild(makeBadge("host-badge", "Host"));
   if (player.isBot) name.appendChild(makeBadge("bot-badge", "CPU"));
+  if (player.eliminated) name.appendChild(makeBadge("uno-badge", "OUT"));
   if (player.id === currentPlayerId) name.appendChild(makeBadge("turn-badge", "Turn"));
   if (player.saidUno) name.appendChild(makeBadge("uno-badge", "UNO"));
   details.appendChild(name);
@@ -754,6 +755,7 @@ function renderGame(game) {
   byId("drawPileCount").textContent = game.pendingDraw ? `+${game.pendingDraw}` : String(game.drawPileCount);
   byId("drawPile").title = game.pendingDraw
     ? `Draw the ${game.pendingDraw}-card penalty (${game.drawPileCount} cards remain)`
+    : game.mode === "no_mercy" ? `Draw until you can play (${game.drawPileCount} cards remain)`
     : `Draw one card (${game.drawPileCount} cards remain)`;
   byId("handCount").textContent = String(game.hand.length);
   document.title = myTurn ? "Your turn | UNO Live" : `Room ${game.code} | UNO Live`;
