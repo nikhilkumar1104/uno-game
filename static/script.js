@@ -796,15 +796,18 @@ function renderGame(game) {
   const challengePanel = byId("wild4Panel");
   challengePanel.classList.toggle("hidden", !challenge || Boolean(winner));
   if (challenge) {
+    byId("wild4Panel").querySelector(".kicker").textContent = challenge.kind || "Wild Draw Four";
     byId("wild4Offender").textContent = challenge.offenderName;
+    byId("wild4Panel").querySelector("h2").textContent = `${challenge.offenderName} played ${challenge.kind || "Wild Draw Four"}`;
+    byId("acceptWild4Btn").textContent = challenge.kind === "Wild Draw Color" ? `Draw until ${challenge.chosenColor}` : `Draw ${challenge.amount || 4}`;
     byId("wild4DecisionCopy").textContent = challenge.canRespond
-      ? `They claimed to have no ${challenge.previousColor} card. Accept 4 or challenge.`
+      ? `They claimed to have no ${challenge.previousColor} card. Accept the penalty or challenge.`
       : "The next player is deciding whether to challenge.";
     byId("acceptWild4Btn").disabled = !challenge.canRespond;
     byId("challengeWild4Btn").disabled = !challenge.canRespond;
   }
 
-  byId("drawPile").disabled = !myTurn || game.canPass || game.mustChooseSwapTarget || Boolean(game.rouletteTargetId) || Boolean(winner) || Boolean(challenge);
+  byId("drawPile").disabled = !myTurn || game.canPass || game.mustChooseSwapTarget || Boolean(game.rouletteTargetId) || Boolean(winner) || Boolean(challenge) || (game.mode === "no_mercy" && !game.pendingDraw && game.playableCardIds.length > 0);
   byId("passTurnBtn").disabled = !myTurn || !game.canPass || Boolean(winner) || Boolean(challenge);
   byId("unoBtn").disabled = !me || me.spectator || game.hand.length !== 1 || me.saidUno || Boolean(winner);
   byId("unoBtn").classList.toggle("attention", Boolean(game.mustDeclareUno));
@@ -968,11 +971,11 @@ function send(event, payload = {}, lockAction = false) {
 }
 
 function sendSelectedCard(card, targetPlayerId = null) {
-  if (card.color === "wild" && !["wild_color", "wild_color_roulette"].includes(card.value)) {
+  if (card.color === "wild" && card.value !== "wild_color_roulette") {
     state.selectedWildCardId = card.id;
     state.selectedWildTargetId = targetPlayerId;
     byId("colorModal").classList.remove("hidden");
-    byId("colorModal").querySelector("button[data-color]")?.focus();
+    byId("colorModal").querySelector("button[data-color]:not(.hidden)")?.focus();
     return;
   }
   send("playCard", { cardId: card.id, targetPlayerId }, true);
