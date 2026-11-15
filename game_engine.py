@@ -573,7 +573,23 @@ def _apply_wild_effect(room: dict[str, Any], card: dict[str, str]) -> None:
 
 
 
-def _apply_flip_effect(room, card):
+def _draw_to_color(room, player, color):
+    """Draw until the requested color, excluding wild as a matching color."""
+    count = 0
+    for _ in range(200):
+        if not room["draw_pile"] and len(room["discard_pile"]) <= 1:
+            break
+        card = _draw_one(room)
+        player["hand"].append(card)
+        player["said_uno"] = False
+        count += 1
+        if card["color"] == color:
+            break
+    _log(room, f"{player['username']} drew {count} card(s) until {color}.")
+    return count
+
+
+def _apply_flip_effect(room, card, player, was_legal, chosen_color):
     value = card["value"]
     if value == "flip":
         _flip_all_cards(room)
@@ -585,19 +601,29 @@ def _apply_flip_effect(room, card):
         advance_turn(room, 2)
     elif value == "skip_everyone":
         _clear_draw_window(room)
-    elif value in ("draw1", "draw5", "wild2"):
-        amount = {"draw1": 1, "draw5": 5, "wild2": 2}[value]
+    elif value in ("draw1", "draw5"):
         advance_turn(room)
         target = current_player(room)
         if target:
-            _draw_many(room, target, amount)
-            _log(room, f"{target['username']} drew {amount} and was skipped.")
+            count = 1 if value == "draw1" else 5
+            _draw_many(room, target, count)
+            _log(room, f"{target['username']} drew {count} and was skipped.")
         advance_turn(room)
-    elif value == "wild_color":
+    elif value in ("wild2", "wild_color"):
         advance_turn(room)
         target = current_player(room)
-        room["roulette_target_id"] = target["id"] if target else None
-        _log(room, f"{target['username']} must choose a color for Wild Draw Color.") if target else None
+        if target:
+            room["wild4_challenge"] = {
+                "offender_id": player["id"],
+                "offender_name": player["username"],
+                "target_id": target["id"],
+                "previous_color": room.get("previous_color"),
+                "was_legal": was_legal,
+                "kind": "Wild Draw Two" if value == "wild2" else "Wild Draw Color",
+                "amount": 2 if value == "wild2" else None,
+                "chosen_color": chosen_color if value == "wild_color" else None,
+            }
+            _log(room, f"{target['username']} can accept or challenge {room['wild4_challenge']['kind']}.")
     else:
         advance_turn(room)
     ensure_connected_turn(room)
