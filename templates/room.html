@@ -45,10 +45,18 @@
             <strong>Wild</strong>
             <span>Stack same type only: +2 on +2 and +4 on +4</span>
           </button>
+          <button class="mode-option" data-mode="flip" type="button">
+            <strong>UNO Flip!</strong>
+            <span>Double-sided cards, light &amp; dark actions, and the Flip card</span>
+          </button>
+          <button class="mode-option" data-mode="no_mercy" type="button">
+            <strong>UNO Show 'Em No Mercy</strong>
+            <span>+2/+4/+6/+10 stacking, Seven-O, 25-card knockout</span>
+          </button>
         </div>
         <details class="custom-rules">
           <summary>Custom room rules</summary>
-          <p class="custom-rules-intro">Optional house rules. They work with both Classic and Wild mode and are enforced by the server for every player.</p>
+          <p class="custom-rules-intro">Optional house rules. Standard modes can customize Seven-O, Jump-In, and Forced Play. No Mercy always applies its official 7 and 0 rules. The server validates every move.</p>
           <div class="rule-builder">
             <label title="Playing a 7 lets you choose another active player and swap your remaining hands. Playing a 0 rotates every hand in the current direction."><input class="room-rule-input" data-rule="seven_zero" type="checkbox"> <span><strong>Seven-O</strong><small>Play a 7 to choose a player and swap hands. Play a 0 to rotate all hands in the current direction.</small></span></label>
             <label title="You may interrupt another turn only with a card whose color and value or action symbol exactly match the top discard."><input class="room-rule-input" data-rule="jump_in" type="checkbox"> <span><strong>Jump-In</strong><small>Interrupt with an exact color-and-symbol match. The turn continues from the player who jumped in.</small></span></label>
