@@ -6,7 +6,7 @@ const APP_SHELL = [
   "/",
   OFFLINE,
   "/static/style.css?v=14",
-  "/static/graphics.css?v=1",
+  "/static/graphics.css?v=2",
   "/static/features.css?v=2",
   "/static/features.js?v=2",
   "/static/script.js?v=15",
