@@ -3605,3 +3605,81 @@ body[data-view="game"] .audio-settings {
     padding-top: 60px;
   }
 }
+
+
+/* Compact, legible action cards across iPhone-sized hands and discard piles. */
+.uno-card {
+  isolation: isolate;
+  min-width: 0;
+}
+.uno-card::before {
+  z-index: 0;
+}
+.uno-card-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(100% - 12px);
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 2px;
+  font-size: clamp(21px, 3.8vw, 30px);
+  font-weight: 950;
+  line-height: 1.04;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  transform: none;
+}
+.uno-card-value.is-long {
+  font-size: clamp(12px, 2.2vw, 17px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+}
+.uno-card-value.is-extra-long {
+  font-size: clamp(10px, 1.9vw, 14px);
+  line-height: 1.02;
+}
+.uno-card.wild .uno-card-value.is-long {
+  font-size: clamp(12px, 2.2vw, 17px);
+}
+.uno-card.wild .uno-card-value.is-extra-long {
+  font-size: clamp(10px, 1.9vw, 14px);
+}
+.uno-card-corner {
+  display: block;
+  top: 5px;
+  left: 5px;
+  max-width: calc(100% - 10px);
+  font-size: clamp(9px, 1.7vw, 12px);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+.uno-card-corner.bottom {
+  inset: auto 5px 5px auto;
+}
+.uno-card .card-color-symbol {
+  pointer-events: none;
+}
+@media (max-width: 600px) {
+  .player-hand .uno-card-value {
+    font-size: 25px;
+  }
+  .player-hand .uno-card-value.is-long,
+  .player-hand .uno-card.wild .uno-card-value.is-long {
+    font-size: 12px;
+  }
+  .player-hand .uno-card-value.is-extra-long,
+  .player-hand .uno-card.wild .uno-card-value.is-extra-long {
+    font-size: 10px;
+  }
+  .player-hand .uno-card-corner {
+    font-size: 10px;
+  }
+  .player-hand .uno-card {
+    border-width: 4px;
+  }
+}
