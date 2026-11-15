@@ -532,9 +532,9 @@ def _apply_seven_zero(
         _log(room, "All hands rotated around the table.")
 
 
-def _best_forced_color(hand: list[dict[str, str]]) -> str:
-    counts = {color: sum(card["color"] == color for card in hand) for color in COLORS}
-    return max(COLORS, key=lambda color: counts[color])
+def _best_forced_color(hand: list[dict[str, str]], colors=COLORS) -> str:
+    counts = {color: sum(card["color"] == color for card in hand) for color in colors}
+    return max(colors, key=lambda color: counts[color])
 
 
 def _apply_classic_effect(
@@ -874,7 +874,8 @@ def draw_card(room: dict[str, Any], player_id: str) -> None:
                 return
             chosen_color = (
                 _best_forced_color(
-                    [item for item in player["hand"] if item["id"] != card["id"]]
+                    [item for item in player["hand"] if item["id"] != card["id"]],
+                    _mode_colors(room),
                 )
                 if card["color"] == "wild"
                 else None
