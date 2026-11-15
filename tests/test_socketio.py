@@ -28,8 +28,8 @@ def test_index_bundles_socket_client_instead_of_external_cdn(tmp_path):
     service_worker = client.get("/sw.js")
     assert service_worker.status_code == 200
     assert service_worker.headers["Service-Worker-Allowed"] == "/"
-    assert b'uno-live-release-1-v11' in service_worker.data
-    assert '/static/style.css?v=14' in html
+    assert b'uno-live-release-1-v12' in service_worker.data
+    assert '/static/style.css?v=15' in html
     assert '/static/script.js?v=15' in html
     assert 'data-reaction-picker' in html
     assert 'id="leaveConfirmModal"' in html
