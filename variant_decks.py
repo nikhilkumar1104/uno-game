@@ -58,13 +58,13 @@ def flip_face(card, side):
 
 
 def create_no_mercy_deck(rng=None):
-    """168-card No Mercy deck, including enhanced action cards."""
+    """168-card experimental No Mercy deck; distribution requires rules verification."""
     deck = []
     for color in NO_MERCY_COLORS:
         for number in range(0, 10):
             deck.extend(_card(color, str(number)) for _ in range(2))
         for value in ("skip", "reverse", "draw2", "draw4", "discard_all", "skip_everyone"):
-            deck.extend(_card(color, value) for _ in range(2))
+            deck.extend(_card(color, value) for _ in range(3))
     for value in ("wild", "wild6", "wild10", "wild_reverse_draw4"):
         deck.extend(_card("wild", value) for _ in range(4))
     # Explicit count guards against accidentally shipping a malformed deck.
