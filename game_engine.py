@@ -109,10 +109,10 @@ def _record_round_action(room: dict[str, Any], player_id: str, metric: str) -> N
 
 
 def _reshuffle_discard(room: dict[str, Any]) -> None:
-    if len(room["discard_pile"]) <= 1:
+    if len(room["discard_pile"]) <= 1 and not room.get("eliminated_cards"):
         raise GameRuleError("No cards are available to draw.")
     top = room["discard_pile"].pop()
-    recycled = room["discard_pile"]
+    recycled = room["discard_pile"] + room.pop("eliminated_cards", [])
     random.SystemRandom().shuffle(recycled)
     room["draw_pile"] = recycled
     room["discard_pile"] = [top]
@@ -165,6 +165,8 @@ def _flip_all_cards(room):
         if "light" in card:
             card["color"] = card[side]["color"]
             card["value"] = card[side]["value"]
+    room["draw_pile"].reverse()
+    room["discard_pile"].reverse()
     top = room["discard_pile"][-1]
     room["current_color"] = top["color"] if top["color"] != "wild" else _mode_colors(room)[0]
     _log(room, f"FLIP! Everyone switched to the {side.upper()} side.")
@@ -215,8 +217,17 @@ def card_points(card: dict[str, str]) -> int:
     return 50 if card["color"] == "wild" else 20
 
 
-def hand_points(hand: list[dict[str, str]]) -> int:
-    return sum(card_points(card) for card in hand)
+def variant_card_points(card, mode):
+    if mode != "flip":
+        return card_points(card)
+    if card["value"].isdigit():
+        return int(card["value"])
+    return {"draw1": 10, "draw5": 20, "skip_everyone": 30,
+            "wild": 40, "wild2": 50, "wild_color": 60}.get(card["value"], 20)
+
+
+def hand_points(hand: list[dict[str, str]], mode="classic") -> int:
+    return sum(variant_card_points(card, mode) for card in hand)
 
 
 def _log(room: dict[str, Any], message: str) -> None:
@@ -377,7 +388,7 @@ def _finish_round(room: dict[str, Any], player: dict[str, Any]) -> None:
         else [player]
     )
     points = sum(
-        hand_points(opponent["hand"])
+        hand_points(opponent["hand"], room.get("mode", "classic"))
         for opponent in active_players(room)
         if (opponent.get("team") != winning_team if team_mode else opponent["id"] != player["id"])
     )
@@ -405,13 +416,14 @@ def _finish_round(room: dict[str, Any], player: dict[str, Any]) -> None:
         "teamLabel": f"Team {'Red' if winning_team == 0 else 'Blue'}" if team_mode else None,
         "members": [winner["username"] for winner in winners],
     }
+    score_target = 1000 if room.get("mode") == "no_mercy" else SCORE_TARGET
     room["match_champion"] = (
         {
             "id": player["id"],
             "username": room["winner"]["teamLabel"] if team_mode else player["username"],
             "points": team_total if team_mode else row["points"],
         }
-        if (team_total if team_mode else row["points"]) >= SCORE_TARGET
+        if (team_total if team_mode else row["points"]) >= score_target
         else None
     )
     _close_uno_window(room)
@@ -677,7 +689,7 @@ def play_card(
         if room.get("pending_draw"):
             raise GameRuleError("That card cannot be stacked on the current draw penalty.")
         raise GameRuleError("That card cannot be played now.")
-    if card["color"] == "wild" and card["value"] not in ("wild_color_roulette", "wild_color") and chosen_color not in _mode_colors(room):
+    if card["color"] == "wild" and card["value"] != "wild_color_roulette" and chosen_color not in _mode_colors(room):
         raise GameRuleError("Choose a valid color for this game side.")
     if (
         (_rule_enabled(room, "seven_zero") or room.get("mode") == "no_mercy")
@@ -722,7 +734,7 @@ def play_card(
             room["uno_pending_player_id"] = player["id"]
             room["uno_catch_available_at"] = time.time() + UNO_CATCH_GRACE_SECONDS
         if room.get("mode") == "flip":
-            _apply_flip_effect(room, card)
+            _apply_flip_effect(room, card, player, wild4_legal, chosen_color)
         else:
             _apply_mercy_effect(room, card)
         return
@@ -1035,7 +1047,7 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
         "playFormat": room.get("play_format", "individual"),
         "rules": {**RULE_DEFAULTS, **room.get("rules", {})},
         "teamScores": room.get("team_scores", {"0": 0, "1": 0}),
-        "scoreTarget": SCORE_TARGET,
+        "scoreTarget": 1000 if room.get("mode") == "no_mercy" else SCORE_TARGET,
         "roundNumber": room.get("round_number", 0),
         "reconnectWait": reconnect_wait(room),
         "serverTime": time.time(),
