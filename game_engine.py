@@ -754,6 +754,17 @@ def play_card(
             if extras:
                 _log(room, f"{player['username']} discarded {len(extras)} extra {card['color']} cards.")
         if not player["hand"]:
+            if room.get("mode") == "flip":
+                if card["value"] == "flip":
+                    _flip_all_cards(room)
+                elif card["value"] in ("draw1", "draw5", "wild2", "wild_color"):
+                    advance_turn(room)
+                    target = current_player(room)
+                    if target:
+                        if card["value"] == "wild_color":
+                            _draw_to_color(room, target, chosen_color)
+                        else:
+                            _draw_many(room, target, {"draw1": 1, "draw5": 5, "wild2": 2}[card["value"]])
             _finish_round(room, player)
             return
         if len(player["hand"]) == 1:
@@ -932,18 +943,22 @@ def _require_challenge_target(room: dict[str, Any], player_id: str) -> tuple[dic
     return challenge, target
 
 
-def accept_wild4(room: dict[str, Any], player_id: str) -> None:
-    _, target = _require_challenge_target(room, player_id)
+def accept_wild4(room, player_id: str) -> None:
+    challenge, target = _require_challenge_target(room, player_id)
     _close_uno_window(room)
-    _draw_many(room, target, 4)
     room["wild4_challenge"] = None
+    if challenge.get("kind") == "Wild Draw Color":
+        count = _draw_to_color(room, target, challenge["chosen_color"])
+    else:
+        count = int(challenge.get("amount") or 4)
+        _draw_many(room, target, count)
     room["move_count"] += 1
-    _log(room, f"{target['username']} accepted the Wild Draw Four, drew 4, and was skipped.")
+    _log(room, f"{target['username']} accepted {challenge.get('kind', 'Wild Draw Four')} and drew {count}.")
     advance_turn(room)
     ensure_connected_turn(room)
 
 
-def challenge_wild4(room: dict[str, Any], player_id: str) -> bool:
+def challenge_wild4(room, player_id: str) -> bool:
     challenge, target = _require_challenge_target(room, player_id)
     _close_uno_window(room)
     offender = next(
@@ -955,16 +970,26 @@ def challenge_wild4(room: dict[str, Any], player_id: str) -> bool:
     room["wild4_challenge"] = None
     room["move_count"] += 1
     if challenge["was_legal"]:
-        _draw_many(room, target, 6)
-        result = f"Challenge failed: {offender['username']} had no {challenge['previous_color']} card. {target['username']} drew 6."
+        if challenge.get("kind") == "Wild Draw Color":
+            amount = _draw_to_color(room, target, challenge["chosen_color"])
+            _draw_many(room, target, 2)
+            amount += 2
+        else:
+            amount = 4 if challenge.get("kind") == "Wild Draw Two" else 6
+            _draw_many(room, target, amount)
+        result = f"Challenge failed: {offender['username']} had no {challenge['previous_color']} card. {target['username']} drew {amount}."
         room["last_challenge_result"] = result
         _log(room, result)
         advance_turn(room)
         ensure_connected_turn(room)
         return False
-    _draw_many(room, offender, 4)
+    if challenge.get("kind") == "Wild Draw Color":
+        amount = _draw_to_color(room, offender, challenge["chosen_color"])
+    else:
+        amount = int(challenge.get("amount") or 4)
+        _draw_many(room, offender, amount)
     _record_round_action(room, player_id, "challenges")
-    result = f"Challenge succeeded: {offender['username']} held the active color and drew 4."
+    result = f"Challenge succeeded: {offender['username']} held the active color and drew {amount}."
     room["last_challenge_result"] = result
     _log(room, result)
     return True
@@ -1062,6 +1087,9 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
             "offenderName": challenge["offender_name"],
             "previousColor": challenge["previous_color"],
             "canRespond": challenge["target_id"] == viewer_id,
+            "kind": challenge.get("kind", "Wild Draw Four"),
+            "amount": challenge.get("amount", 4),
+            "chosenColor": challenge.get("chosen_color"),
         }
     choices = room.get("rematch_choices", {})
     return {
