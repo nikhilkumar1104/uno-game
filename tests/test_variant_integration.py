@@ -253,3 +253,25 @@ def test_flip_bot_uses_dark_side_colors_for_wild_cards():
     assert result
     assert value["discard_pile"][-1]["id"] == wild["id"]
     assert value["current_color"] == "purple"
+
+
+def test_flip_dark_forced_play_chooses_valid_dark_color():
+    from game_engine import _best_forced_color
+    colors = ("pink", "teal", "orange", "purple")
+    hand = [make_card("purple", "2"), make_card("purple", "4"), make_card("pink", "1")]
+    assert _best_forced_color(hand, colors) == "purple"
+
+
+def test_flip_dark_forced_play_drawn_wild_is_server_legal():
+    value = room("flip")
+    value["flip_side"] = "dark"
+    value["current_color"] = "pink"
+    value["discard_pile"] = [make_card("pink", "5")]
+    value["rules"] = {"forced_play": True}
+    value["players"][0]["hand"] = [make_card("purple", "2"), make_card("purple", "4")]
+    value["players"][1]["hand"] = [make_card("teal", "3")]
+    wild = make_card("wild", "wild")
+    value["draw_pile"] = [wild]
+    draw_card(value, "p0")
+    assert value["discard_pile"][-1]["id"] == wild["id"]
+    assert value["current_color"] == "purple"
