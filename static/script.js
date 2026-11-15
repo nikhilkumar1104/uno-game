@@ -69,6 +69,11 @@ const CARD_LABELS = {
   draw2: "+2",
   wild: "WILD",
   wild4: "+4",
+  draw1: "+1", draw5: "+5", wild2: "WILD +2",
+  flip: "FLIP", skip_everyone: "SKIP ALL",
+  wild_color: "DRAW COLOR", draw4: "+4", wild6: "+6", wild10: "+10",
+  wild_reverse_draw4: "REV +4", wild_color_roulette: "ROULETTE",
+  discard_all: "DISCARD ALL",
 };
 
 const COLOR_HEX = {
@@ -76,9 +81,11 @@ const COLOR_HEX = {
   yellow: "#f5c842",
   green: "#18a866",
   blue: "#2879e9",
+  pink: "#eb5ab8", teal: "#21b5b0", orange: "#f07c29", purple: "#a366dd",
 };
 
-const COLOR_SYMBOLS = { red: "◆", yellow: "●", green: "▲", blue: "■", wild: "✦" };
+const COLOR_SYMBOLS = { red: "◆", yellow: "●", green: "▲", blue: "■", pink: "♥", teal: "⬟", orange: "⬢", purple: "★", wild: "✦" };
+const MODE_LABELS = { classic: "Classic", wild: "Wild stacking", flip: "UNO Flip!", no_mercy: "UNO No Mercy" };
 const QUICK_REACTIONS = Object.freeze([
   { kind: "funny", icon: "😂", label: "Funny", text: "😂 That was funny!" },
   { kind: "angry", icon: "😡", label: "Angry", text: "😡 I am angry!" },
@@ -415,7 +422,7 @@ function renderLobby(room) {
   });
   byId("modeLockHint").textContent = state.isHost
     ? "Choose before starting"
-    : `${room.mode === "wild" ? "Wild stacking" : "Classic"} selected by host`;
+    : `${MODE_LABELS[room.mode] || "Classic"} selected by host`;
 
   const list = byId("lobbyPlayers");
   list.replaceChildren(...room.players.map(renderLobbyPlayer));
@@ -597,13 +604,17 @@ function renderEvents(events) {
 function renderActiveRules(game) {
   const descriptions = [
     game.mode === "wild"
-      ? ["Wild stacking", "+2 stacks only on +2, and +4 only on +4. Cross-stacking is blocked. Draw the full total when you cannot continue."]
-      : ["Classic", "No stacking. A +4 may be challenged and is legal only when its player has no card matching the active color."],
+      ? ["Wild stacking", "+2 stacks only on +2, and +4 only on +4. Cross-stacking is blocked."]
+      : game.mode === "flip"
+      ? ["UNO Flip!", "Flip switches every card between Light and Dark. Light has +1 and +2; Dark has +5 and Wild Draw Color."]
+      : game.mode === "no_mercy"
+      ? ["UNO No Mercy", "Equal-or-higher draw stacking, forced draw-until-play, mandatory Seven-O, discard all, and 25-card elimination."]
+      : ["Classic", "No stacking. A +4 may be challenged when its player held the active color."],
   ];
   if (game.playFormat === "teams") {
     descriptions.push(["2v2 teams", "Four alternating seats form two teams. A team wins the round when either partner empties their hand."]);
   }
-  if (game.rules?.seven_zero) {
+  if (game.rules?.seven_zero && game.mode !== "no_mercy") {
     descriptions.push(["Seven-O", "A 7 swaps your remaining hand with a chosen player. A 0 rotates every hand in the current direction."]);
   }
   if (game.rules?.jump_in) {
@@ -720,9 +731,11 @@ function renderGame(game) {
 
   byId("gameRoomCode").textContent = game.code;
   const customCount = Object.values(game.rules || {}).filter(Boolean).length;
-  byId("gameModeLabel").textContent = `${game.mode === "wild" ? "Wild stacking" : "Classic"}${game.playFormat === "teams" ? " · 2v2" : ""}${customCount ? ` · ${customCount} custom` : ""}`;
+  byId("gameModeLabel").textContent = `${MODE_LABELS[game.mode] || "Classic"}${game.mode === "flip" ? " · " + (game.flipSide === "dark" ? "Dark side" : "Light side") : ""}${game.playFormat === "teams" ? " · 2v2" : ""}${customCount ? ` · ${customCount} custom` : ""}`;
   byId("turnStatus").textContent = winner
     ? `${winner.teamLabel || winner.username} wins`
+    : game.mustChooseRouletteColor
+      ? "Choose a color for Wild Color Roulette"
     : challenge?.canRespond
       ? "Choose whether to challenge +4"
       : myTurn && game.pendingDraw
@@ -791,12 +804,24 @@ function renderGame(game) {
     byId("challengeWild4Btn").disabled = !challenge.canRespond;
   }
 
-  byId("drawPile").disabled = !myTurn || game.canPass || game.mustChooseSwapTarget || Boolean(winner) || Boolean(challenge);
+  byId("drawPile").disabled = !myTurn || game.canPass || game.mustChooseSwapTarget || Boolean(game.rouletteTargetId) || Boolean(winner) || Boolean(challenge);
   byId("passTurnBtn").disabled = !myTurn || !game.canPass || Boolean(winner) || Boolean(challenge);
   byId("unoBtn").disabled = !me || me.spectator || game.hand.length !== 1 || me.saidUno || Boolean(winner);
   byId("unoBtn").classList.toggle("attention", Boolean(game.mustDeclareUno));
   renderCatchButton(game, winner);
-  byId("spectatorNotice").classList.toggle("hidden", !me?.spectator);
+  byId("spectatorNotice").classList.toggle("hidden", !me?.spectator && !me?.eliminated);
+  byId("spectatorNotice").textContent = me?.eliminated ? "The Mercy Rule knocked you out this round. You can still watch and chat." : "Spectator mode: you can watch and chat.";
+  byId("roulettePanel").classList.toggle("hidden", !game.rouletteTargetId || Boolean(winner));
+  byId("rouletteHeading").textContent = game.mustChooseRouletteColor ? "Choose a color to draw to" : "Waiting for the affected player";
+  const modeColors = game.mode === "flip" && game.flipSide === "dark"
+    ? ["pink", "teal", "orange", "purple"] : ["red", "yellow", "green", "blue"];
+  document.querySelectorAll("#roulettePanel [data-roulette-color]").forEach((button) => {
+    button.classList.toggle("hidden", !modeColors.includes(button.dataset.rouletteColor));
+    button.disabled = !game.mustChooseRouletteColor;
+  });
+  document.querySelectorAll("#colorModal [data-color]").forEach((button) => {
+    button.classList.toggle("hidden", !modeColors.includes(button.dataset.color));
+  });
 
   const winnerPanel = byId("winnerPanel");
   winnerPanel.classList.toggle("hidden", !winner);
@@ -943,7 +968,7 @@ function send(event, payload = {}, lockAction = false) {
 }
 
 function sendSelectedCard(card, targetPlayerId = null) {
-  if (card.color === "wild") {
+  if (card.color === "wild" && !["wild_color", "wild_color_roulette"].includes(card.value)) {
     state.selectedWildCardId = card.id;
     state.selectedWildTargetId = targetPlayerId;
     byId("colorModal").classList.remove("hidden");
@@ -955,14 +980,14 @@ function sendSelectedCard(card, targetPlayerId = null) {
 
 function requestCardPlay(card) {
   if (!card || !state.game?.playableCardIds.includes(card.id)) return;
-  const needsSwap = state.game.rules?.seven_zero && card.value === "7" && state.game.hand.length > 1;
+  const needsSwap = (state.game.rules?.seven_zero || state.game.mode === "no_mercy") && card.value === "7" && state.game.hand.length > 1;
   if (!needsSwap) {
     sendSelectedCard(card);
     return;
   }
   state.selectedSwapCardId = card.id;
   const choices = state.game.players
-    .filter((player) => !player.spectator && player.id !== state.playerId)
+    .filter((player) => !player.spectator && !player.eliminated && player.id !== state.playerId)
     .map((player) => {
       const button = document.createElement("button");
       button.type = "button";
@@ -1475,6 +1500,12 @@ byId("playerHand").addEventListener("click", (event) => {
   const card = state.game.hand.find((item) => item.id === button.dataset.cardId);
   if (!card) return;
   requestCardPlay(card);
+});
+
+byId("roulettePanel").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-roulette-color]");
+  if (!button || button.disabled || !state.game?.mustChooseRouletteColor) return;
+  send("chooseRouletteColor", { chosenColor: button.dataset.rouletteColor }, true);
 });
 
 byId("colorModal").addEventListener("click", (event) => {
