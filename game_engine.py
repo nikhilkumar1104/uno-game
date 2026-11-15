@@ -7,10 +7,12 @@ import time
 import uuid
 from typing import Any
 
+from variant_decks import create_flip_deck, create_no_mercy_deck, NO_MERCY_DRAW_PENALTIES, is_eliminated_no_mercy
+
 
 COLORS = ("red", "yellow", "green", "blue")
 ACTION_VALUES = ("skip", "reverse", "draw2")
-GAME_MODES = ("classic", "wild")
+GAME_MODES = ("classic", "wild", "flip", "no_mercy")
 PLAY_FORMATS = ("individual", "teams")
 RULE_DEFAULTS = {
     "seven_zero": False,
@@ -45,7 +47,7 @@ def create_deck(rng: random.Random | None = None) -> list[dict[str, str]]:
 
 
 def active_players(room: dict[str, Any]) -> list[dict[str, Any]]:
-    return [player for player in room["players"] if not player["spectator"]]
+    return [player for player in room["players"] if not player["spectator"] and (room.get("status") != "playing" or not player.get("eliminated", False))]
 
 
 def current_player(room: dict[str, Any]) -> dict[str, Any] | None:
@@ -126,6 +128,46 @@ def _draw_many(room: dict[str, Any], player: dict[str, Any], count: int) -> None
     for _ in range(count):
         player["hand"].append(_draw_one(room))
     player["said_uno"] = False
+    if room.get("mode") == "no_mercy" and room.get("status") == "playing":
+        if is_eliminated_no_mercy(player["hand"]):
+            player["eliminated"] = True
+            room.setdefault("eliminated_cards", []).extend(player["hand"])
+            player["hand"] = []
+            _log(room, f"{player['username']} was eliminated by the 25-card Mercy Rule!")
+            _check_mercy_victory(room)
+
+
+def _mode_colors(room):
+    return ("pink", "teal", "orange", "purple") if room.get("mode") == "flip" and room.get("flip_side") == "dark" else COLORS
+
+
+def _safe_card(card):
+    """Never publish the hidden opposite side of a Flip card."""
+    return {"id": card["id"], "color": card["color"], "value": card["value"]}
+
+
+def _turn_target(room):
+    return current_player(room)
+
+
+def _check_mercy_victory(room):
+    if room.get("status") == "playing" and room.get("mode") == "no_mercy":
+        remaining = active_players(room)
+        if len(remaining) == 1:
+            _finish_round(room, remaining[0])
+
+
+def _flip_all_cards(room):
+    side = "dark" if room.get("flip_side", "light") == "light" else "light"
+    room["flip_side"] = side
+    for card in (room.get("draw_pile", []) + room.get("discard_pile", []) +
+                 [card for seat in room["players"] for card in seat["hand"]]):
+        if "light" in card:
+            card["color"] = card[side]["color"]
+            card["value"] = card[side]["value"]
+    top = room["discard_pile"][-1]
+    room["current_color"] = top["color"] if top["color"] != "wild" else _mode_colors(room)[0]
+    _log(room, f"FLIP! Everyone switched to the {side.upper()} side.")
 
 
 def can_play(card: dict[str, str], top_card: dict[str, str], current_color: str) -> bool:
@@ -147,6 +189,11 @@ def _wild4_is_legal(
 
 def _stack_is_legal(room: dict[str, Any], card: dict[str, str]) -> bool:
     pending_type = room.get("pending_draw_type")
+    if room.get("mode") == "no_mercy":
+        return (
+            NO_MERCY_DRAW_PENALTIES.get(card["value"], 0)
+            >= NO_MERCY_DRAW_PENALTIES.get(pending_type, 0) > 0
+        )
     if pending_type == "draw2":
         return card["value"] == "draw2"
     if pending_type == "wild4":
@@ -158,16 +205,14 @@ def card_is_playable(
     room: dict[str, Any], player: dict[str, Any], card: dict[str, str]
 ) -> bool:
     if room.get("pending_draw", 0):
-        return room.get("mode") == "wild" and _stack_is_legal(room, card)
+        return room.get("mode") in ("wild", "no_mercy") and _stack_is_legal(room, card)
     return can_play(card, room["discard_pile"][-1], room["current_color"])
 
 
 def card_points(card: dict[str, str]) -> int:
     if card["value"].isdigit():
         return int(card["value"])
-    if card["value"] in ACTION_VALUES:
-        return 20
-    return 50
+    return 50 if card["color"] == "wild" else 20
 
 
 def hand_points(hand: list[dict[str, str]]) -> int:
@@ -206,7 +251,9 @@ def set_game_mode(room: dict[str, Any], mode: str) -> None:
     if room["status"] != "lobby":
         raise GameRuleError("Game mode can be changed only in the lobby.")
     if mode not in GAME_MODES:
-        raise GameRuleError("Choose Classic or Wild mode.")
+        raise GameRuleError("Choose Classic, Wild, UNO Flip, or No Mercy mode.")
+    if mode in ("flip", "no_mercy") and room.get("play_format") == "teams":
+        raise GameRuleError("Flip and No Mercy support individual play only.")
     room["mode"] = mode
     room["updated_at"] = time.time()
 
@@ -219,6 +266,8 @@ def set_room_options(
         raise GameRuleError("Table options can be changed only in the lobby.")
     if play_format not in PLAY_FORMATS:
         raise GameRuleError("Choose individual play or 2v2 teams.")
+    if room.get("mode") in ("flip", "no_mercy") and play_format == "teams":
+        raise GameRuleError("Flip and No Mercy support individual play only.")
     requested = rules if isinstance(rules, dict) else {}
     room["play_format"] = play_format
     room["rules"] = {key: bool(requested.get(key, False)) for key in RULE_DEFAULTS}
@@ -244,6 +293,7 @@ def start_game(room: dict[str, Any]) -> None:
         player["spectator"] = player["id"] not in connected_ids
         player["hand"] = []
         player["said_uno"] = False
+        player["eliminated"] = False
         if not player["spectator"]:
             player["team"] = active_seat % 2 if room.get("play_format") == "teams" else None
             active_seat += 1
@@ -257,7 +307,15 @@ def start_game(room: dict[str, Any]) -> None:
             "game_id": uuid.uuid4().hex,
             "round_stats": {},
             "round_number": room.get("round_number", 0) + 1,
-            "draw_pile": create_deck(),
+            "draw_pile": (
+                [{**card, **card["light"]} for card in create_flip_deck()]
+                if room.get("mode") == "flip" else
+                create_no_mercy_deck() if room.get("mode") == "no_mercy" else
+                create_deck()
+            ),
+            "flip_side": "light",
+            "roulette_target_id": None,
+            "eliminated_cards": [],
             "discard_pile": [],
             "direction": 1,
             "current_index": 0,
@@ -286,13 +344,13 @@ def start_game(room: dict[str, Any]) -> None:
             player["hand"].append(_draw_one(room))
 
     first = _draw_one(room)
-    while first["color"] == "wild" or first["value"] in ACTION_VALUES:
+    while not first["value"].isdigit():
         room["draw_pile"].insert(0, first)
         random.SystemRandom().shuffle(room["draw_pile"])
         first = _draw_one(room)
     room["discard_pile"].append(first)
     room["current_color"] = first["color"]
-    label = "Classic" if room.get("mode", "classic") == "classic" else "Wild stacking"
+    label = {"classic": "Classic", "wild": "Wild stacking", "flip": "UNO Flip", "no_mercy": "No Mercy"}.get(room.get("mode"), "Classic")
     _log(room, f"Round {room['round_number']} started in {label} mode.")
 
 
@@ -305,6 +363,8 @@ def _require_turn(room: dict[str, Any], player_id: str) -> dict[str, Any]:
         raise GameRuleError("It is not your turn.")
     if room.get("wild4_challenge"):
         raise GameRuleError("Resolve the Wild Draw Four before taking another action.")
+    if room.get("roulette_target_id"):
+        raise GameRuleError("Resolve the Wild Color Roulette first.")
     return player
 
 
@@ -321,6 +381,8 @@ def _finish_round(room: dict[str, Any], player: dict[str, Any]) -> None:
         for opponent in active_players(room)
         if (opponent.get("team") != winning_team if team_mode else opponent["id"] != player["id"])
     )
+    if room.get("mode") == "no_mercy":
+        points += 250 * sum(bool(p.get("eliminated")) for p in room["players"])
     for winner in winners:
         row = _leaderboard_row(room, winner)
         row["wins"] += 1
@@ -415,7 +477,7 @@ def _jump_in_player(
 def _apply_seven_zero(
     room: dict[str, Any], player: dict[str, Any], card: dict[str, str], target_id: str | None
 ) -> None:
-    if not _rule_enabled(room, "seven_zero"):
+    if not (_rule_enabled(room, "seven_zero") or room.get("mode") == "no_mercy"):
         return
     players = active_players(room)
     if card["value"] == "7":
@@ -498,6 +560,93 @@ def _apply_wild_effect(room: dict[str, Any], card: dict[str, str]) -> None:
     ensure_connected_turn(room)
 
 
+
+def _apply_flip_effect(room, card):
+    value = card["value"]
+    if value == "flip":
+        _flip_all_cards(room)
+        advance_turn(room)
+    elif value == "reverse":
+        room["direction"] *= -1
+        advance_turn(room, 2 if len(active_players(room)) == 2 else 1)
+    elif value == "skip":
+        advance_turn(room, 2)
+    elif value == "skip_everyone":
+        _clear_draw_window(room)
+    elif value in ("draw1", "draw5", "wild2"):
+        amount = {"draw1": 1, "draw5": 5, "wild2": 2}[value]
+        advance_turn(room)
+        target = current_player(room)
+        if target:
+            _draw_many(room, target, amount)
+            _log(room, f"{target['username']} drew {amount} and was skipped.")
+        advance_turn(room)
+    elif value == "wild_color":
+        advance_turn(room)
+        target = current_player(room)
+        room["roulette_target_id"] = target["id"] if target else None
+        _log(room, f"{target['username']} must choose a color for Wild Draw Color.") if target else None
+    else:
+        advance_turn(room)
+    ensure_connected_turn(room)
+
+
+def _apply_mercy_effect(room, card):
+    value = card["value"]
+    if value in NO_MERCY_DRAW_PENALTIES:
+        if value == "wild_reverse_draw4":
+            room["direction"] *= -1
+        room["pending_draw"] = room.get("pending_draw", 0) + NO_MERCY_DRAW_PENALTIES[value]
+        room["pending_draw_type"] = value
+        advance_turn(room)
+    elif value == "reverse":
+        room["direction"] *= -1
+        advance_turn(room, 2 if len(active_players(room)) == 2 else 1)
+    elif value == "skip":
+        advance_turn(room, 2)
+    elif value == "skip_everyone":
+        _clear_draw_window(room)
+    elif value == "wild_color_roulette":
+        advance_turn(room)
+        target = current_player(room)
+        room["roulette_target_id"] = target["id"] if target else None
+    else:
+        advance_turn(room)
+    ensure_connected_turn(room)
+
+
+def resolve_roulette(room, player_id, chosen_color):
+    """The affected player chooses a color then draws through its first match."""
+    if room.get("status") != "playing" or room.get("roulette_target_id") != player_id:
+        raise GameRuleError("You are not choosing a roulette color.")
+    if chosen_color not in _mode_colors(room):
+        raise GameRuleError("Choose one of the current colors.")
+    target = next((p for p in active_players(room) if p["id"] == player_id), None)
+    if not target:
+        raise GameRuleError("The affected player is no longer active.")
+    room["roulette_target_id"] = None
+    _close_uno_window(room)
+    drawn = 0
+    for _ in range(168):
+        card = _draw_one(room)
+        target["hand"].append(card)
+        target["said_uno"] = False
+        drawn += 1
+        if room.get("mode") == "no_mercy" and is_eliminated_no_mercy(target["hand"]):
+            target["eliminated"] = True
+            room.setdefault("eliminated_cards", []).extend(target["hand"])
+            target["hand"] = []
+            _log(room, f"{target['username']} was eliminated by the Mercy Rule.")
+            _check_mercy_victory(room)
+            break
+        if card["color"] == chosen_color:
+            break
+    _log(room, f"{target['username']} drew {drawn} card(s) in color roulette.")
+    if room["status"] == "playing":
+        advance_turn(room)
+        ensure_connected_turn(room)
+
+
 def play_card(
     room: dict[str, Any],
     player_id: str,
@@ -526,10 +675,10 @@ def play_card(
         if room.get("pending_draw"):
             raise GameRuleError("That card cannot be stacked on the current draw penalty.")
         raise GameRuleError("That card cannot be played now.")
-    if card["color"] == "wild" and chosen_color not in COLORS:
-        raise GameRuleError("Choose red, yellow, green, or blue.")
+    if card["color"] == "wild" and chosen_color not in _mode_colors(room):
+        raise GameRuleError("Choose a valid color for this game side.")
     if (
-        _rule_enabled(room, "seven_zero")
+        (_rule_enabled(room, "seven_zero") or room.get("mode") == "no_mercy")
         and card["value"] == "7"
         and len(player["hand"]) > 1
         and not any(
@@ -554,6 +703,27 @@ def play_card(
     _log(room, f"{player['username']} played {card['value']}{color_note}.")
     if jumped:
         _log(room, f"{player['username']} jumped in with an exact match!")
+
+    if room.get("mode") in ("flip", "no_mercy"):
+        _apply_seven_zero(room, player, card, target_player_id)
+        if room.get("mode") == "no_mercy" and card["value"] == "discard_all":
+            extras = [item for item in player["hand"] if item["color"] == card["color"]]
+            for item in extras:
+                player["hand"].remove(item)
+                room["discard_pile"].insert(-1, item)
+            if extras:
+                _log(room, f"{player['username']} discarded {len(extras)} extra {card['color']} cards.")
+        if not player["hand"]:
+            _finish_round(room, player)
+            return
+        if len(player["hand"]) == 1:
+            room["uno_pending_player_id"] = player["id"]
+            room["uno_catch_available_at"] = time.time() + UNO_CATCH_GRACE_SECONDS
+        if room.get("mode") == "flip":
+            _apply_flip_effect(room, card)
+        else:
+            _apply_mercy_effect(room, card)
+        return
 
     if not player["hand"]:
         # Draw penalties count toward the round score, including the complete
@@ -583,6 +753,34 @@ def play_card(
 def draw_card(room: dict[str, Any], player_id: str) -> None:
     player = _require_turn(room, player_id)
     pending = room.get("pending_draw", 0)
+    if room.get("mode") == "no_mercy" and not pending:
+        if any(card_is_playable(room, player, card) for card in player["hand"]):
+            raise GameRuleError("You must play a matching card if you have one.")
+        _close_uno_window(room)
+        for _ in range(168):
+            card = _draw_one(room)
+            player["hand"].append(card)
+            player["said_uno"] = False
+            room["move_count"] += 1
+            if is_eliminated_no_mercy(player["hand"]):
+                player["eliminated"] = True
+                room.setdefault("eliminated_cards", []).extend(player["hand"])
+                player["hand"] = []
+                _log(room, f"{player['username']} eliminated after reaching 25 cards.")
+                _check_mercy_victory(room)
+                if room.get("status") == "playing":
+                    room["current_index"] %= max(1, len(active_players(room)))
+                return
+            if card_is_playable(room, player, card):
+                room["drawn_by_id"] = player_id
+                room["drawn_card_id"] = card["id"]
+                _log(room, f"{player['username']} drew to a playable card.")
+                if card["value"] == "7" and len(player["hand"]) > 1:
+                    return
+                chosen = _best_forced_color([item for item in player["hand"] if item["id"] != card["id"]]) if card["color"] == "wild" else None
+                play_card(room, player_id, card["id"], chosen)
+                return
+        raise GameRuleError("No playable card available in the deck.")
     if pending:
         _close_uno_window(room)
         _draw_many(room, player, pending)
@@ -590,8 +788,9 @@ def draw_card(room: dict[str, Any], player_id: str) -> None:
         _log(room, f"{player['username']} drew the {pending}-card stack and was skipped.")
         room["pending_draw"] = 0
         room["pending_draw_type"] = None
-        advance_turn(room)
-        ensure_connected_turn(room)
+        if room["status"] == "playing":
+            advance_turn(room)
+            ensure_connected_turn(room)
         return
     if room.get("drawn_by_id") == player_id:
         raise GameRuleError("You already drew a card this turn.")
@@ -826,6 +1025,8 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
         "code": room["code"],
         "status": room["status"],
         "mode": room.get("mode", "classic"),
+        "flipSide": room.get("flip_side", "light"),
+        "rouletteTargetId": room.get("roulette_target_id"),
         "playFormat": room.get("play_format", "individual"),
         "rules": {**RULE_DEFAULTS, **room.get("rules", {})},
         "teamScores": room.get("team_scores", {"0": 0, "1": 0}),
@@ -837,7 +1038,7 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
         "currentPlayerId": turn["id"] if turn else None,
         "currentColor": room.get("current_color"),
         "direction": room.get("direction", 1),
-        "topDiscard": top_card,
+        "topDiscard": _safe_card(top_card) if top_card else None,
         "drawPileCount": len(room.get("draw_pile", [])),
         "pendingDraw": room.get("pending_draw", 0),
         "wild4Challenge": challenge_public,
@@ -852,6 +1053,7 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
                 "connected": player["connected"],
                 "reconnectDeadline": player.get("reconnect_deadline"),
                 "spectator": player["spectator"],
+                "eliminated": bool(player.get("eliminated")),
                 "cardCount": len(player["hand"]),
                 "saidUno": player["said_uno"],
                 "isBot": bool(player.get("is_bot")),
@@ -861,16 +1063,17 @@ def public_state(room: dict[str, Any], viewer_id: str) -> dict[str, Any]:
             }
             for player in room["players"]
         ],
-        "hand": [] if not viewer or viewer["spectator"] else viewer["hand"],
+        "hand": [] if not viewer or viewer["spectator"] else [_safe_card(card) for card in viewer["hand"]],
         "playableCardIds": playable_ids,
         "canPass": room.get("drawn_by_id") == viewer_id and not challenge and not _rule_enabled(room, "forced_play"),
         "mustChooseSwapTarget": (
             room.get("drawn_by_id") == viewer_id
             and _rule_enabled(room, "forced_play")
-            and _rule_enabled(room, "seven_zero")
+            and (_rule_enabled(room, "seven_zero") or room.get("mode") == "no_mercy")
             and not challenge
         ),
         "mustDeclareUno": pending_uno_id == viewer_id,
+        "mustChooseRouletteColor": room.get("roulette_target_id") == viewer_id,
         "catchableUnoPlayer": catchable,
         "catchUnoAvailableInMs": (
             max(
