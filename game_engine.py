@@ -124,17 +124,37 @@ def _draw_one(room: dict[str, Any]) -> dict[str, str]:
     return room["draw_pile"].pop()
 
 
+def _eliminate_if_mercy(room, player):
+    if room.get("mode") != "no_mercy" or room.get("status") != "playing":
+        return False
+    if not is_eliminated_no_mercy(player["hand"]):
+        return False
+    before = active_players(room)
+    actor = current_player(room)
+    current_id = actor["id"] if actor else None
+    if current_id == player["id"] and len(before) > 1:
+        idx = before.index(player)
+        current_id = before[(idx + room["direction"]) % len(before)]["id"]
+    player["eliminated"] = True
+    room.setdefault("eliminated_cards", []).extend(player["hand"])
+    player["hand"] = []
+    player["said_uno"] = False
+    remaining = active_players(room)
+    if remaining and current_id:
+        room["current_index"] = next(
+            (idx for idx, seat in enumerate(remaining) if seat["id"] == current_id), 0
+        )
+    _log(room, f"{player['username']} was eliminated by the 25-card Mercy Rule!")
+    _check_mercy_victory(room)
+    return True
+
+
 def _draw_many(room: dict[str, Any], player: dict[str, Any], count: int) -> None:
     for _ in range(count):
         player["hand"].append(_draw_one(room))
+        if _eliminate_if_mercy(room, player):
+            return
     player["said_uno"] = False
-    if room.get("mode") == "no_mercy" and room.get("status") == "playing":
-        if is_eliminated_no_mercy(player["hand"]):
-            player["eliminated"] = True
-            room.setdefault("eliminated_cards", []).extend(player["hand"])
-            player["hand"] = []
-            _log(room, f"{player['username']} was eliminated by the 25-card Mercy Rule!")
-            _check_mercy_victory(room)
 
 
 def _mode_colors(room):
@@ -672,12 +692,7 @@ def resolve_roulette(room, player_id, chosen_color):
         target["hand"].append(card)
         target["said_uno"] = False
         drawn += 1
-        if room.get("mode") == "no_mercy" and is_eliminated_no_mercy(target["hand"]):
-            target["eliminated"] = True
-            room.setdefault("eliminated_cards", []).extend(target["hand"])
-            target["hand"] = []
-            _log(room, f"{target['username']} was eliminated by the Mercy Rule.")
-            _check_mercy_victory(room)
+        if _eliminate_if_mercy(room, target):
             break
         if card["color"] == chosen_color:
             break
@@ -813,14 +828,7 @@ def draw_card(room: dict[str, Any], player_id: str) -> None:
             player["hand"].append(card)
             player["said_uno"] = False
             room["move_count"] += 1
-            if is_eliminated_no_mercy(player["hand"]):
-                player["eliminated"] = True
-                room.setdefault("eliminated_cards", []).extend(player["hand"])
-                player["hand"] = []
-                _log(room, f"{player['username']} eliminated after reaching 25 cards.")
-                _check_mercy_victory(room)
-                if room.get("status") == "playing":
-                    room["current_index"] %= max(1, len(active_players(room)))
+            if _eliminate_if_mercy(room, player):
                 return
             if card_is_playable(room, player, card):
                 room["drawn_by_id"] = player_id
