@@ -284,7 +284,7 @@ def test_solo_room_adds_and_runs_server_controlled_computer(tmp_path):
     code = joined["roomCode"]
     host.get_received()
 
-    host.emit("addBot", {"roomCode": code})
+    host.emit("addBot", {"roomCode": code, "difficulty": "hard"})
     lobby = received_payload(host, "lobbyState")
     bot_public = next(player for player in lobby["players"] if player["isBot"])
     assert bot_public["username"] == "Computer 1"
