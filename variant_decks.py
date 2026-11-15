@@ -10,7 +10,7 @@ FLIP_LIGHT_COLORS = ("red", "yellow", "green", "blue")
 FLIP_DARK_COLORS = ("pink", "teal", "orange", "purple")
 NO_MERCY_COLORS = ("red", "yellow", "green", "blue")
 NO_MERCY_ELIMINATION_COUNT = 25
-NO_MERCY_DRAW_PENALTIES = {"draw2": 2, "draw4": 4, "wild6": 6, "wild10": 10}
+NO_MERCY_DRAW_PENALTIES = {"draw2": 2, "draw4": 4, "wild_reverse_draw4": 4, "wild6": 6, "wild10": 10}
 
 
 def _card(color, value):
@@ -58,16 +58,22 @@ def flip_face(card, side):
 
 
 def create_no_mercy_deck(rng=None):
-    """168-card experimental No Mercy deck; distribution requires rules verification."""
+    """168-card No Mercy deck. Wilds have their official action values."""
     deck = []
     for color in NO_MERCY_COLORS:
-        for number in range(0, 10):
+        for number in range(10):
             deck.extend(_card(color, str(number)) for _ in range(2))
-        for value in ("skip", "reverse", "draw2", "draw4", "discard_all", "skip_everyone"):
-            deck.extend(_card(color, value) for _ in range(3))
-    for value in ("wild", "wild6", "wild10", "wild_reverse_draw4"):
-        deck.extend(_card("wild", value) for _ in range(4))
-    # Explicit count guards against accidentally shipping a malformed deck.
+        for action in ("skip", "reverse", "draw2", "discard_all"):
+            deck.extend(_card(color, action) for _ in range(3))
+        for action in ("draw4", "skip_everyone"):
+            deck.extend(_card(color, action) for _ in range(2))
+    for value, count in (
+        ("wild_reverse_draw4", 8),
+        ("wild_color_roulette", 8),
+        ("wild6", 4),
+        ("wild10", 4),
+    ):
+        deck.extend(_card("wild", value) for _ in range(count))
     assert len(deck) == 168
     (rng or random.SystemRandom()).shuffle(deck)
     return deck
