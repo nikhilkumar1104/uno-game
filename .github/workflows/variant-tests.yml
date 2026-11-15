@@ -1,0 +1,30 @@
+name: UNO variant and regression tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - feature/uno-flip-no-mercy
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pytest
+      - name: Verify Python syntax
+        run: python -m compileall -q app.py game_engine.py variant_decks.py bot_player.py rooms.py tests
+      - name: Verify browser JavaScript syntax
+        run: node --check static/script.js
+      - name: Unit and integration tests
+        run: python -m pytest -q

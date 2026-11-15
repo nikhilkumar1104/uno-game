@@ -18,6 +18,7 @@ from game_engine import (
     draw_card,
     pass_turn,
     play_card,
+    resolve_roulette,
 )
 
 
@@ -42,10 +43,10 @@ def legal_bot_cards(room: dict[str, Any], player: dict[str, Any]) -> list[dict[s
     ]
 
 
-def choose_color(hand: list[dict[str, str]], rng: random.Random) -> str:
-    counts = Counter(card["color"] for card in hand if card["color"] in COLORS)
+def choose_color(hand: list[dict[str, str]], rng: random.Random, colors=COLORS) -> str:
+    counts = Counter(card["color"] for card in hand if card["color"] in colors)
     if not counts:
-        return rng.choice(list(COLORS))
+        return rng.choice(list(colors))
     best_count = max(counts.values())
     return rng.choice([color for color, count in counts.items() if count == best_count])
 
@@ -106,6 +107,15 @@ def perform_bot_turn(
     if room.get("status") != "playing":
         return None
 
+    roulette_id = room.get("roulette_target_id")
+    if roulette_id:
+        target = next((p for p in room["players"] if p["id"] == roulette_id), None)
+        if not target or not target.get("is_bot"):
+            return None
+        colors = ("pink", "teal", "orange", "purple") if room.get("mode") == "flip" and room.get("flip_side") == "dark" else COLORS
+        color = choose_color(target["hand"], rng, colors)
+        resolve_roulette(room, roulette_id, color)
+        return {"message": f"{target['username']} chose {color} for roulette.", "effects": []}
     challenge = room.get("wild4_challenge")
     if challenge:
         target = next(
@@ -148,12 +158,13 @@ def perform_bot_turn(
     playable = legal_bot_cards(room, player)
     if playable:
         card = choose_card(playable, rng, difficulty, personality)
+        colors = ("pink", "teal", "orange", "purple") if room.get("mode") == "flip" and room.get("flip_side") == "dark" else COLORS
         chosen_color = choose_color(
-            [item for item in player["hand"] if item["id"] != card["id"]], rng
+            [item for item in player["hand"] if item["id"] != card["id"]], rng, colors
         ) if card["color"] == "wild" else None
         target_id = (
             _seven_target(room, player)
-            if room.get("rules", {}).get("seven_zero") and card["value"] == "7"
+            if (room.get("rules", {}).get("seven_zero") or room.get("mode") == "no_mercy") and card["value"] == "7"
             else None
         )
         play_card(room, player["id"], card["id"], chosen_color, target_id)
@@ -193,12 +204,13 @@ def perform_bot_turn(
         pass_turn(room, player["id"])
         return {"message": None, "effects": []}
 
+    colors = ("pink", "teal", "orange", "purple") if room.get("mode") == "flip" and room.get("flip_side") == "dark" else COLORS
     chosen_color = choose_color(
-        [item for item in player["hand"] if item["id"] != drawn["id"]], rng
+        [item for item in player["hand"] if item["id"] != drawn["id"]], rng, colors
     ) if drawn["color"] == "wild" else None
     target_id = (
         _seven_target(room, player)
-        if room.get("rules", {}).get("seven_zero") and drawn["value"] == "7"
+        if (room.get("rules", {}).get("seven_zero") or room.get("mode") == "no_mercy") and drawn["value"] == "7"
         else None
     )
     play_card(room, player["id"], drawn["id"], chosen_color, target_id)

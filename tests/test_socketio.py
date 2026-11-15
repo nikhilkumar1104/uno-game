@@ -28,9 +28,9 @@ def test_index_bundles_socket_client_instead_of_external_cdn(tmp_path):
     service_worker = client.get("/sw.js")
     assert service_worker.status_code == 200
     assert service_worker.headers["Service-Worker-Allowed"] == "/"
-    assert b'uno-live-release-1-v9' in service_worker.data
+    assert b'uno-live-release-1-v10' in service_worker.data
     assert '/static/style.css?v=13' in html
-    assert '/static/script.js?v=13' in html
+    assert '/static/script.js?v=14' in html
     assert 'data-reaction-picker' in html
     assert 'id="leaveConfirmModal"' in html
     assert 'data-game-aside-panel="rulesPanel"' in html
@@ -284,7 +284,7 @@ def test_solo_room_adds_and_runs_server_controlled_computer(tmp_path):
     code = joined["roomCode"]
     host.get_received()
 
-    host.emit("addBot", {"roomCode": code})
+    host.emit("addBot", {"roomCode": code, "difficulty": "hard"})
     lobby = received_payload(host, "lobbyState")
     bot_public = next(player for player in lobby["players"] if player["isBot"])
     assert bot_public["username"] == "Computer 1"

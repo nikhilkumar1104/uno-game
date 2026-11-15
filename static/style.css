@@ -1079,6 +1079,21 @@ button:disabled {
 .uno-card.yellow { --card-color: var(--yellow); color: #2b2200; }
 .uno-card.green { --card-color: var(--green); }
 .uno-card.blue { --card-color: var(--blue); }
+.uno-card.pink { --card-color: #eb5ab8; }
+.uno-card.teal { --card-color: #21b5b0; }
+.uno-card.orange { --card-color: #f07c29; }
+.uno-card.purple { --card-color: #a366dd; }
+#rouletteChoices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+#rouletteChoices button { min-height: 42px; border-radius: 8px; font-weight: 800; }
+#rouletteChoices [data-roulette-color="pink"] { background: #eb5ab8; }
+#rouletteChoices [data-roulette-color="teal"] { background: #21b5b0; color: #071b1c; }
+#rouletteChoices [data-roulette-color="orange"] { background: #f07c29; }
+#rouletteChoices [data-roulette-color="purple"] { background: #a366dd; }
+#rouletteChoices [data-roulette-color="red"] { background: var(--red); }
+#rouletteChoices [data-roulette-color="yellow"] { background: var(--yellow); color: #2b2200; }
+#rouletteChoices [data-roulette-color="green"] { background: var(--green); }
+#rouletteChoices [data-roulette-color="blue"] { background: var(--blue); }
+
 .uno-card.wild {
   background: linear-gradient(135deg, var(--red) 0 25%, var(--yellow) 25% 50%, var(--green) 50% 75%, var(--blue) 75%);
 }
